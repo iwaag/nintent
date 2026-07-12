@@ -371,6 +371,27 @@ an actual node discovered by normalized name matching, such as desired `pcmain`
 to actual `pcmain.local`, to provide interface and MAC candidates for DHCP
 reservation export.
 
+## REST API
+
+`DesiredNode` and `DesiredEndpoint` are exposed read/write through Nautobot's
+REST API so both humans and agents can query desired state without going
+through the UI or a Django shell:
+
+```text
+GET  /api/plugins/intent-catalog/nodes/
+GET  /api/plugins/intent-catalog/nodes/<uuid>/
+GET  /api/plugins/intent-catalog/endpoints/
+GET  /api/plugins/intent-catalog/endpoints/<uuid>/
+```
+
+Standard Nautobot REST conventions apply: authenticate with
+`Authorization: Token <api-token>`, use `POST`/`PATCH`/`DELETE` for writes, and
+filter with the same fields exposed by `DesiredNodeFilterSet` and
+`DesiredEndpointFilterSet` (for example `?slug=agstudio` or
+`?desired_node=<uuid>`). Other models (`DesiredService`,
+`DesiredServicePlacement`, `IntentEvaluation`, etc.) are not yet exposed
+through the REST API and remain UI/ORM-only for now.
+
 ## Intent Evaluations
 
 `IntentEvaluation` stores durable desired-vs-actual review data for UI, API,

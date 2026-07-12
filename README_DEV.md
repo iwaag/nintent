@@ -125,6 +125,47 @@ Keep cross-version object conversion at the boundary where Nautobot models are
 turned into app facts. Prefer small compatibility helpers there over scattering
 direct assumptions such as `IPAddress.address` through evaluation logic.
 
+## REST API
+
+`DesiredNode` and `DesiredEndpoint` are the only two models with a REST API
+today, deliberately scoped to the two models an agent needs to check
+desired-vs-actual host/IP state. The implementation lives under
+`nautobot_intent_catalog/api/`:
+
+- `api/serializers.py`: `DesiredNodeSerializer` / `DesiredEndpointSerializer`,
+  both plain `NautobotModelSerializer` subclasses with `fields = "__all__"`.
+- `api/views.py`: `DesiredNodeViewSet` / `DesiredEndpointViewSet`, both plain
+  `NautobotModelViewSet` subclasses reusing the existing `DesiredNodeFilterSet`
+  / `DesiredEndpointFilterSet` from `filters.py`.
+- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes` and
+  `endpoints`. Nautobot auto-discovers this via
+  `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in
+  `nautobot.extras.plugins.__init__`, so no manual URL wiring in the main
+  Nautobot install is required beyond the existing App installation.
+
+Unlike `models.py`/`filters.py`, the `api/` package does not need the
+`try/except ImportError` guard for Nautobot-less local unit tests: Nautobot
+only imports `api/urls.py` when the App is loaded inside a real Nautobot
+process, so a plain top-level `from nautobot.apps.api import ...` is fine.
+
+To add another model to the API later, follow the same three-file pattern and
+register it on the existing `router` in `api/urls.py`; there is no need for a
+new router per model.
+
+### Verifying the API in a running Nautobot
+
+There is no local (Django-free) test coverage for the API layer since it only
+exists inside a real Nautobot process. Verify it against a running instance:
+
+```bash
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/nodes/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/endpoints/
+```
+
+A 404 on `/api/plugins/intent-catalog/...` after installing this change
+usually means the running container still has the old package (see the
+GitHub-install/rebuild flow above) rather than a code problem.
+
 ## Rename Cleanup Checks
 
 Before completing a rename-oriented step, run searches for old implementation
