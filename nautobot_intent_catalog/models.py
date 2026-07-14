@@ -28,11 +28,12 @@ try:
     from django.core.exceptions import ValidationError
     from django.db import models
     from django.urls import reverse
-    from nautobot.apps.models import PrimaryModel
+    from nautobot.apps.models import PrimaryModel, extras_features
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     PrimaryModel = object  # type: ignore[assignment]
 else:
 
+    @extras_features("graphql")
     class IntentSource(PrimaryModel):
         """Input source record used for intent import and analysis."""
 
@@ -78,6 +79,7 @@ else:
             return reverse("plugins:nautobot_intent_catalog:intentsource", args=[self.pk])
 
 
+    @extras_features("graphql")
     class DesiredService(PrimaryModel):
         """Desired service generated from source metadata."""
 
@@ -170,6 +172,7 @@ else:
             return reverse("plugins:nautobot_intent_catalog:desiredservice", args=[self.pk])
 
 
+    @extras_features("graphql")
     class DesiredDependency(PrimaryModel):
         """Dependency metadata attached to a desired service."""
 
@@ -226,6 +229,7 @@ else:
             return reverse("plugins:nautobot_intent_catalog:desireddependency", args=[self.pk])
 
 
+    @extras_features("graphql")
     class DesiredNode(PrimaryModel):
         """Desired node intent that may be realized by one or more actual object types."""
 
@@ -349,6 +353,7 @@ else:
                 )
 
 
+    @extras_features("graphql")
     class DesiredEndpoint(PrimaryModel):
         """Desired endpoint attached to a desired node."""
 
@@ -440,6 +445,7 @@ else:
             return reverse("plugins:nautobot_intent_catalog:desiredendpoint", args=[self.pk])
 
 
+    @extras_features("graphql")
     class DesiredServicePlacement(PrimaryModel):
         """Desired binding of one service instance to one desired node."""
 
@@ -552,6 +558,7 @@ else:
                 raise ValidationError(errors)
 
 
+    @extras_features("graphql")
     class DesiredNodeOperationalConfig(PrimaryModel):
         """Explicit non-service execution policy for one desired node."""
 
@@ -711,6 +718,7 @@ else:
                 raise ValidationError(errors)
 
 
+    @extras_features("graphql")
     class DesiredIPRange(PrimaryModel):
         """Desired address range intent managed by nintent."""
 
@@ -768,6 +776,7 @@ else:
             return reverse("plugins:nautobot_intent_catalog:desirediprange", args=[self.pk])
 
 
+    @extras_features("graphql")
     class IntentEvaluation(PrimaryModel):
         """Persisted deterministic and optional AI review for one intent target."""
 
