@@ -99,15 +99,13 @@ Run jobs in this order when DHCP reservations depend on discovered facts:
 2. `Evaluate Endpoint Intent`
 3. `Reconcile Desired IPAM Intent` — optional; dry-run by default, enable
    `commit_changes` to create/link `IPAddress` rows.
-4. `Export dnsmasq Records`
+4. Run `nctl render dnsmasq` outside Nautobot.
 
-`Export dnsmasq Records` produces JobResult files:
+`nctl render dnsmasq` produces dnsmasq configuration on stdout. Use `--out`
+to write it to a file or `--json` to inspect records and skipped details.
 
-- `dnsmasq-records.conf` — dnsmasq-ready lines.
-- `dnsmasq-export.json` — export metadata, records, and `skipped` details.
-
-Deployment automation should only place the generated `.conf`, e.g. at
-`/etc/dnsmasq.d/nintent-records.conf`.
+The renderer lives in `nctl`; nintent only exposes its desired-state and
+evaluation inputs through GraphQL.
 
 ## Evaluation jobs
 

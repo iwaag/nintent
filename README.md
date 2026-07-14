@@ -305,33 +305,11 @@ Run the `Sync Deployment Profiles` Job with the same canonical
 export-input contract and stores a single digest-keyed projection. Quick Service
 Placement reads this projection for profile choices and config schemas.
 
-## dnsmasq Export
+## dnsmasq rendering
 
-Run the `Export dnsmasq Records` Job to create deterministic JobResult output
-files for automation:
-
-- `dnsmasq-records.conf`: dnsmasq-ready configuration lines.
-- `dnsmasq-export.json`: machine-readable export metadata, `dns_records`,
-  `dhcp_reservations`, and skipped endpoint details for Ansible, audit, and
-  troubleshooting.
-
-The Python API is `nautobot_intent_catalog.dnsmasq.export_dnsmasq_records()`;
-it returns a dictionary-friendly structure with `summary`, `dns_records`,
-`dhcp_reservations`, and `skipped` entries.
-
-Initial export selection requires:
-
-- `generate_dnsmasq: true`
-- explicit endpoint `ip_policy`
-- both `ip_address` and `dns_name`
-- desired node lifecycle of `planned`, `approved`, or `active`
-- endpoint type of `primary`, `management`, `service`, or `vpn`
-
-Supported `dnsmasq_record_type` values are:
-
-- `host_record`: `host-record=<dns_name>,<ip>`
-- `address`: `address=/<dns_name>/<ip>`
-- `cname`: `cname=<vpn_dns_name>,<dns_name>`
+The dnsmasq consumer-format renderer is owned by `nctl`; this app only stores
+and exposes the desired endpoints, IP ranges, and intent evaluations that it
+reads. Use `nctl render dnsmasq` instead of a Nautobot export Job.
 
 `cname` records require `vpn_dns_name` as the alias target. `mdns_name` is kept
 as endpoint metadata and is intentionally not exported as a dnsmasq record.
@@ -350,13 +328,11 @@ When these conditions are met, `dnsmasq-records.conf` includes:
 dhcp-host=<mac>,<dns_name>,<ip>
 ```
 
-`ip_address` values with CIDR suffixes are normalized to host addresses for both
-DNS records and DHCP reservations. DNS records are still exported when DHCP is
-skipped; missing actual nodes, missing MACs, ambiguous interfaces, invalid MACs,
-and inactive lifecycles are reported in `dnsmasq-export.json` under `skipped`.
-Ansible and other deployment automation should only place the generated
-artifact, for example at `/etc/dnsmasq.d/nintent-records.conf`; MAC inference
-and desired-vs-actual comparison belong to Nautobot evaluation jobs.
+`ip_address` values with CIDR suffixes are normalized to host addresses by the
+`nctl` renderer. DNS records can still be rendered when DHCP is skipped;
+missing actual nodes, missing MACs, ambiguous interfaces, invalid MACs, and
+inactive lifecycles are reported by `nctl render dnsmasq --json`. MAC inference
+and desired-vs-actual comparison remain inputs from Nautobot evaluation jobs.
 
 Run the jobs in this order when DHCP reservations depend on discovered actual
 node/interface facts:
@@ -364,7 +340,7 @@ node/interface facts:
 1. `Evaluate Node Intent`
 2. `Evaluate Endpoint Intent`
 3. `Reconcile Desired IPAM Intent` when you want to dry-run or apply IPAM links
-4. `Export dnsmasq Records`
+4. `nctl render dnsmasq` outside Nautobot
 
 The endpoint evaluation consumes the latest stored node evaluation. This allows
 an actual node discovered by normalized name matching, such as desired `pcmain`
@@ -440,9 +416,9 @@ Run `Evaluate Endpoint Intent` to compare `DesiredEndpoint` rows with
 latest stored node evaluation. It records IP address mismatches as `conflict`,
 missing or unlinked IP addresses as `partial`, and DHCP MAC candidates in
 `observed_facts`. Endpoints with no MAC or multiple MAC-bearing interfaces are
-not considered DHCP-reservation-ready. `Export dnsmasq Records` consumes these
-deterministic facts to emit `dhcp-host=` lines only when the reservation is
-unambiguous.
+not considered DHCP-reservation-ready. `nctl render dnsmasq` consumes these
+deterministic facts through GraphQL and emits `dhcp-host=` lines only when the
+reservation is unambiguous.
 
 Run `Reconcile Desired IPAM Intent` to optionally reflect
 `DesiredEndpoint.ip_policy=dhcp_reserved` into Nautobot `IPAddress` rows. The
@@ -493,7 +469,7 @@ boundary:
   `deterministic_summary`, `actual_refs`, `observed_facts`, `expected_facts`,
   `gap_summary`, `recommended_actions`
 - optional IPAM apply boundary: `Reconcile Desired IPAM Intent`
-- dnsmasq deployment input: JobResult files from `Export dnsmasq Records`
+- dnsmasq deployment input: output from `nctl render dnsmasq`
 
 For local checks that do not require Nautobot:
 

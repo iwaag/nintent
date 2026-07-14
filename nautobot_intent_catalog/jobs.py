@@ -21,7 +21,6 @@ from .production_inventory import (
     render_production_inventory_yml,
     render_production_report_json,
 )
-from .dnsmasq import export_dnsmasq_records, render_dnsmasq_export_json, render_dnsmasq_records_conf
 from .evaluations import (
     ENDPOINT_TARGET_TYPE,
     NODE_TARGET_TYPE,
@@ -403,63 +402,6 @@ else:
             self.logger.info("Desired service evaluation summary: %s", _json(counts))
 
 
-    class ExportDnsmasqRecords(Job):
-        """Dry-run export desired endpoint dnsmasq records."""
-
-        include_skipped = BooleanVar(
-            default=True,
-            description="Include skipped endpoint details in the Job log.",
-        )
-
-        class Meta:
-            name = "Export dnsmasq Records"
-            description = "Dry-run deterministic dnsmasq record export from DesiredEndpoint rows."
-            has_sensitive_variables = False
-
-        def run(self, include_skipped: bool) -> None:
-            endpoints = DesiredEndpoint.objects.select_related("desired_node").order_by(
-                "desired_node__slug",
-                "endpoint_type",
-                "name",
-            )
-            ip_ranges = DesiredIPRange.objects.all().order_by("start_address", "end_address", "name")
-            endpoint_list = list(endpoints)
-            ip_range_list = list(ip_ranges)
-            export = export_dnsmasq_records(
-                endpoint_list,
-                ip_ranges=ip_range_list,
-                endpoint_evaluations=_latest_evaluations(ENDPOINT_TARGET_TYPE),
-                node_evaluations=_latest_evaluations(NODE_TARGET_TYPE),
-                include_skipped=include_skipped,
-            )
-            generated_at = timezone.now().isoformat()
-            job_result_id = str(getattr(self.job_result, "id", "")) or None
-            self.create_file(
-                "dnsmasq-records.conf",
-                render_dnsmasq_records_conf(export, generated_at=generated_at, job_result_id=job_result_id),
-            )
-            self.create_file(
-                "dnsmasq-export.json",
-                render_dnsmasq_export_json(export, generated_at=generated_at, job_result_id=job_result_id),
-            )
-            self.logger.info("dnsmasq export summary: %s", _json(export.summary))
-            self.logger.info(
-                "dnsmasq export counts: %s",
-                _json(
-                    {
-                        "dns_records": len(export.dns_records),
-                        "dhcp_reservations": len(export.dhcp_reservations),
-                        "dhcp_ranges": len(export.dhcp_ranges),
-                        "range_candidates": len(ip_range_list),
-                        "skipped_details": len(export.skipped),
-                    }
-                ),
-            )
-            self.logger.info("dnsmasq export files: dnsmasq-records.conf, dnsmasq-export.json")
-            if include_skipped:
-                self.logger.info("dnsmasq export skipped endpoints: %s", _json(export.skipped))
-
-
     class ExportAnsibleHostsIntent(Job):
         """Export minimal Ansible bootstrap inventory from desired nodes."""
 
@@ -699,7 +641,6 @@ else:
         EvaluateNodeIntent,
         EvaluateEndpointIntent,
         EvaluateServiceIntent,
-        ExportDnsmasqRecords,
         ExportAnsibleHostsIntent,
         ExportProductionInventory,
         SyncDeploymentProfiles,

@@ -13,7 +13,7 @@ class IntentCatalogConfig(NautobotAppConfig):
     name = "nautobot_intent_catalog"
     verbose_name = "Intent Catalog"
     description = "Manage and analyze cluster desired state and intent."
-    version = "0.4.0"
+    version = "0.5.0"
     author = ""
     author_email = ""
     base_url = "intent-catalog"
