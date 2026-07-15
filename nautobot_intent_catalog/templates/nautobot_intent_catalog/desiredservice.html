@@ -4,11 +4,6 @@
 <div class="container-fluid">
     <div class="row">
         <div class="col-md-12">
-            <div class="pull-right">
-                <a href="{% url 'plugins:nautobot_intent_catalog:desiredserviceplacement_quick_add' %}?desired_service={{ object.pk }}" class="btn btn-primary">
-                    <i class="mdi mdi-plus-thick"></i> Place this service
-                </a>
-            </div>
             <h1>{{ object.display_name|default:object.name }}</h1>
 
             <div class="panel panel-default">
@@ -100,9 +95,6 @@
             <div class="panel panel-default">
                 <div class="panel-heading">
                     <strong>Desired Placements</strong>
-                    <a href="{% url 'plugins:nautobot_intent_catalog:desiredserviceplacement_quick_add' %}?desired_service={{ object.pk }}" class="btn btn-xs btn-primary pull-right">
-                        <i class="mdi mdi-plus-thick"></i> Place this service
-                    </a>
                 </div>
                 {% with placements=object.placements.all %}
                     {% if placements %}

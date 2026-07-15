@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from .production_inventory_contract import (
+from .intent_contract import (
     ContractError,
     canonical_json,
     validate_desired_service_reference,

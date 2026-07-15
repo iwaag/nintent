@@ -70,11 +70,6 @@ if hasattr(views, "IntentSourceListView"):
                 name="desiredserviceplacement_list",
             ),
             path(
-                "placements/quick-add/",
-                views.DesiredServicePlacementQuickAddView.as_view(),
-                name="desiredserviceplacement_quick_add",
-            ),
-            path(
                 "placements/add/",
                 views.DesiredServicePlacementEditView.as_view(),
                 name="desiredserviceplacement_add",
@@ -131,19 +126,6 @@ if hasattr(views, "IntentSourceListView"):
                 "ip-ranges/<uuid:pk>/delete/",
                 views.DesiredIPRangeDeleteView.as_view(),
                 name="desirediprange_delete",
-            ),
-            path("evaluations/", views.IntentEvaluationListView.as_view(), name="intentevaluation_list"),
-            path("evaluations/add/", views.IntentEvaluationEditView.as_view(), name="intentevaluation_add"),
-            path("evaluations/<uuid:pk>/", views.IntentEvaluationView.as_view(), name="intentevaluation"),
-            path(
-                "evaluations/<uuid:pk>/edit/",
-                views.IntentEvaluationEditView.as_view(),
-                name="intentevaluation_edit",
-            ),
-            path(
-                "evaluations/<uuid:pk>/delete/",
-                views.IntentEvaluationDeleteView.as_view(),
-                name="intentevaluation_delete",
             ),
         ]
     )

@@ -19,10 +19,8 @@ try:
         DesiredNodeOperationalConfigFilterSet,
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
-        IntentEvaluationFilterSet,
         IntentSourceFilterSet,
     )
-    from .deployment_profiles import DeploymentProfilesUnavailable, load_deployment_profiles
     from .forms import (
         DesiredDependencyForm,
         DesiredEndpointForm,
@@ -32,8 +30,6 @@ try:
         DesiredNodeOperationalConfigForm,
         DesiredServiceForm,
         DesiredServicePlacementForm,
-        DesiredServicePlacementQuickAddForm,
-        IntentEvaluationForm,
         IntentSourceForm,
     )
     from .models import (
@@ -44,12 +40,10 @@ try:
         DesiredNodeOperationalConfig,
         DesiredService,
         DesiredServicePlacement,
-        IntentEvaluation,
         IntentSource,
     )
     from .operations import (
         create_desired_node_with_primary_endpoint,
-        create_desired_service_placement,
     )
     from .tables import (
         DesiredDependencyTable,
@@ -59,7 +53,6 @@ try:
         DesiredNodeOperationalConfigTable,
         DesiredServiceTable,
         DesiredServicePlacementTable,
-        IntentEvaluationTable,
         IntentSourceTable,
     )
 except ImportError:  # pragma: no cover - Nautobot is unavailable in local unit tests.
@@ -261,61 +254,6 @@ else:
         queryset = DesiredServicePlacement.objects.all()
 
 
-    class DesiredServicePlacementQuickAddView(FormView):
-        """Create one desired service placement from operator-chosen inputs."""
-
-        form_class = DesiredServicePlacementQuickAddForm
-        template_name = "nautobot_intent_catalog/desiredserviceplacement_quick_add.html"
-
-        def get_initial(self):
-            initial = super().get_initial()
-            desired_service = self.request.GET.get("desired_service")
-            if desired_service:
-                initial["desired_service"] = desired_service
-            return initial
-
-        def get_form_kwargs(self):
-            kwargs = super().get_form_kwargs()
-            kwargs["profiles"] = self._profiles()
-            return kwargs
-
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            self._profiles()
-            context["deployment_profiles_error"] = self._profiles_error
-            return context
-
-        def form_valid(self, form):
-            try:
-                self.result = create_desired_service_placement(**form.operation_kwargs())
-            except ValidationError as exc:
-                _add_validation_errors(form, exc)
-                return self.form_invalid(form)
-
-            placement = self.result.placement
-            messages.success(
-                self.request,
-                f"Created service placement {placement.desired_service}:{placement.instance_name} "
-                f"on {placement.desired_node}.",
-            )
-            return super().form_valid(form)
-
-        def get_success_url(self):
-            if hasattr(self, "result"):
-                return self.result.placement.get_absolute_url()
-            return super().get_success_url()
-
-        def _profiles(self):
-            if not hasattr(self, "_loaded_profiles"):
-                try:
-                    self._loaded_profiles = load_deployment_profiles()
-                    self._profiles_error = None
-                except DeploymentProfilesUnavailable as exc:
-                    self._loaded_profiles = {}
-                    self._profiles_error = str(exc)
-            return self._loaded_profiles
-
-
     class DesiredNodeOperationalConfigListView(ObjectListView):
         """List desired node operational policies."""
 
@@ -376,33 +314,6 @@ else:
         """Delete a desired IP range record."""
 
         queryset = DesiredIPRange.objects.all()
-
-
-    class IntentEvaluationListView(ObjectListView):
-        """List intent evaluation records."""
-
-        queryset = IntentEvaluation.objects.all()
-        filterset = IntentEvaluationFilterSet
-        table = IntentEvaluationTable
-
-
-    class IntentEvaluationView(ObjectView):
-        """Show one intent evaluation record."""
-
-        queryset = IntentEvaluation.objects.all()
-
-
-    class IntentEvaluationEditView(ObjectEditView):
-        """Edit an intent evaluation record."""
-
-        queryset = IntentEvaluation.objects.all()
-        model_form = IntentEvaluationForm
-
-
-    class IntentEvaluationDeleteView(ObjectDeleteView):
-        """Delete an intent evaluation record."""
-
-        queryset = IntentEvaluation.objects.all()
 
 
     def _add_validation_errors(form, exc):

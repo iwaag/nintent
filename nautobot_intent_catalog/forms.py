@@ -15,7 +15,6 @@ try:
         DesiredNodeOperationalConfig,
         DesiredService,
         DesiredServicePlacement,
-        IntentEvaluation,
         IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -112,136 +111,6 @@ else:
             """Return operation-ready keyword arguments."""
 
             return {**self.node_data(), **self.endpoint_data()}
-
-
-    class DesiredServicePlacementQuickAddForm(forms.Form):
-        """Quick-add form for one desired service placement.
-
-        Operators only choose what they actually decide: the service, the node,
-        the deployment profile, and the profile's config values.  Derived values
-        (``config_schema_version``, ``assignment_source``) are never shown; the
-        operation derives/fixes them.  ``deployment_profile`` choices and the
-        dynamic ``config`` fields come from the synced deployment_profiles
-        projection passed in as ``profiles``.
-        """
-
-        desired_service = forms.ModelChoiceField(queryset=DesiredService.objects.all())
-        desired_node = forms.ModelChoiceField(queryset=DesiredNode.objects.all())
-        deployment_profile = forms.ChoiceField(choices=())
-        instance_name = forms.SlugField(max_length=255, required=False)
-        desired_endpoint = forms.ModelChoiceField(
-            queryset=DesiredEndpoint.objects.none(),
-            required=False,
-        )
-        desired_state = forms.ChoiceField(
-            choices=DesiredServicePlacement.DESIRED_STATE_CHOICES,
-            initial=DesiredServicePlacement.STATE_ACTIVE,
-        )
-        instance_role = forms.CharField(max_length=64, required=False)
-        reason = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
-
-        def __init__(self, *args, profiles=None, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.profiles = dict(profiles or {})
-            self._config_field_map: dict[str, str] = {}
-
-            self.fields["deployment_profile"].choices = [("", "---------")] + [
-                (name, name) for name in sorted(self.profiles)
-            ]
-
-            node = self._raw_value("desired_node")
-            if node:
-                self.fields["desired_endpoint"].queryset = DesiredEndpoint.objects.filter(
-                    desired_node=node
-                )
-
-            profile_name = self._raw_value("deployment_profile")
-            if profile_name and profile_name in self.profiles:
-                self._build_config_fields(self.profiles[profile_name])
-
-        def clean(self):
-            cleaned = super().clean()
-            if not self.profiles:
-                # Never silently present an empty profile picker; tell the operator
-                # to sync, using the same input as production inventory export.
-                raise forms.ValidationError(
-                    "No deployment profiles are synced. Run the Sync Deployment Profiles "
-                    "Job with the same input used for production inventory export, then retry."
-                )
-            return cleaned
-
-        def config_fields(self):
-            """Yield the dynamically generated bound config fields for templates."""
-
-            return [self[field_name] for field_name in self._config_field_map]
-
-        def config_data(self):
-            """Assemble the placement config dict from generated profile fields."""
-
-            config: dict = {}
-            for field_name, key in self._config_field_map.items():
-                if field_name not in self.cleaned_data:
-                    continue
-                value = self.cleaned_data.get(field_name)
-                if isinstance(self.fields[field_name], forms.BooleanField):
-                    config[key] = bool(value)
-                elif value is not None and value != "":
-                    config[key] = value
-            return config
-
-        def operation_kwargs(self):
-            """Return operation-ready keyword arguments for the placement operation."""
-
-            cleaned = self.cleaned_data
-            return {
-                "desired_service": cleaned["desired_service"],
-                "desired_node": cleaned["desired_node"],
-                "deployment_profile": cleaned["deployment_profile"],
-                "profiles": self.profiles,
-                "instance_name": cleaned.get("instance_name") or None,
-                "desired_endpoint": cleaned.get("desired_endpoint"),
-                "desired_state": cleaned.get("desired_state") or DesiredServicePlacement.STATE_ACTIVE,
-                "instance_role": cleaned.get("instance_role") or None,
-                "config": self.config_data(),
-                "reason": cleaned.get("reason") or None,
-            }
-
-        def _build_config_fields(self, profile):
-            for key in sorted(profile.get("variables", {})):
-                field_name = self._config_field_name(key)
-                self.fields[field_name] = self._config_field(key, profile["variables"][key])
-                self._config_field_map[field_name] = key
-
-        def _config_field(self, key, definition):
-            value_type = definition.get("type")
-            required = bool(definition.get("required"))
-            common = {
-                "label": key,
-                "help_text": f"{value_type} ({'required' if required else 'optional'})",
-            }
-            if value_type == "integer":
-                return forms.IntegerField(required=required, **common)
-            if value_type == "number":
-                return forms.FloatField(required=required, **common)
-            if value_type == "boolean":
-                # Presence-by-value: a boolean key is always present, so required
-                # is satisfied without forcing the checkbox to be ticked.
-                return forms.BooleanField(required=False, **common)
-            if value_type == "list":
-                return forms.JSONField(required=required, **common)
-            return forms.CharField(required=required, **common)
-
-        @staticmethod
-        def _config_field_name(key):
-            return f"config__{key}"
-
-        def _raw_value(self, field_name):
-            if self.is_bound:
-                return self.data.get(self.add_prefix(field_name))
-            value = self.initial.get(field_name)
-            if value is None:
-                value = self.fields[field_name].initial
-            return value
 
 
     class IntentSourceForm(NautobotModelForm):
@@ -412,26 +281,4 @@ else:
                 "generate_dnsmasq",
                 "dnsmasq_options",
                 "description",
-            )
-
-
-    class IntentEvaluationForm(NautobotModelForm):
-        """Edit form for persisted intent evaluations."""
-
-        class Meta:
-            model = IntentEvaluation
-            fields = (
-                "target_type",
-                "target_id",
-                "status",
-                "deterministic_summary",
-                "actual_refs",
-                "observed_facts",
-                "expected_facts",
-                "gap_summary",
-                "ai_review",
-                "recommended_actions",
-                "review_model",
-                "source_hash",
-                "reviewed_at",
             )

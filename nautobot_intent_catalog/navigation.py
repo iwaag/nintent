@@ -41,20 +41,12 @@ else:
                             name="Service Placements",
                         ),
                         NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:desiredserviceplacement_quick_add",
-                            name="Quick Service Placement",
-                        ),
-                        NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirednodeoperationalconfig_list",
                             name="Node Operational Configs",
                         ),
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirediprange_list",
                             name="Desired IP Ranges",
-                        ),
-                        NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:intentevaluation_list",
-                            name="Evaluations",
                         ),
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:source_yaml_list",

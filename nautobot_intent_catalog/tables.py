@@ -14,7 +14,6 @@ try:
         DesiredNodeOperationalConfig,
         DesiredService,
         DesiredServicePlacement,
-        IntentEvaluation,
         IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -291,35 +290,5 @@ else:
                 "range_policy",
                 "lifecycle",
                 "generate_dnsmasq",
-                "actions",
-            )
-
-
-    class IntentEvaluationTable(BaseTable):
-        """Intent evaluation list table."""
-
-        pk = ToggleColumn()
-        target_type = tables.LinkColumn()
-        actions = ButtonsColumn(IntentEvaluation, buttons=TABLE_ACTION_BUTTONS)
-
-        class Meta(BaseTable.Meta):
-            model = IntentEvaluation
-            fields = (
-                "pk",
-                "target_type",
-                "target_id",
-                "status",
-                "source_hash",
-                "review_model",
-                "reviewed_at",
-                "actions",
-            )
-            default_columns = (
-                "pk",
-                "target_type",
-                "target_id",
-                "status",
-                "source_hash",
-                "reviewed_at",
                 "actions",
             )

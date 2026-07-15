@@ -14,7 +14,6 @@ try:
         DesiredNodeOperationalConfig,
         DesiredService,
         DesiredServicePlacement,
-        IntentEvaluation,
         IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -230,31 +229,4 @@ else:
                 | queryset.filter(slug__icontains=value)
                 | queryset.filter(start_address__icontains=value)
                 | queryset.filter(end_address__icontains=value)
-            )
-
-
-    class IntentEvaluationFilterSet(NautobotFilterSet):
-        """Filters for intent evaluations."""
-
-        q = django_filters.CharFilter(method="search", label="Search")
-
-        class Meta:
-            model = IntentEvaluation
-            fields = (
-                "id",
-                "target_type",
-                "target_id",
-                "status",
-                "source_hash",
-                "review_model",
-            )
-
-        def search(self, queryset, name, value):
-            if not value.strip():
-                return queryset
-            return (
-                queryset.filter(target_type__icontains=value)
-                | queryset.filter(status__icontains=value)
-                | queryset.filter(source_hash__icontains=value)
-                | queryset.filter(review_model__icontains=value)
             )

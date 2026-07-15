@@ -4,30 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import uuid
-from collections import defaultdict
 from pathlib import Path
 
-from .actual_facts import read_actual_facts
 from .analysis import analyze_intent_sources
 from .ansible_inventory import export_hosts_intent, render_hosts_intent_json, render_hosts_intent_yml
-from .production_inventory import (
-    EndpointInput,
-    NodeInput,
-    OperationalConfigInput,
-    PlacementInput,
-    RealizedState,
-    compose_production_inventory,
-    render_production_inventory_yml,
-    render_production_report_json,
-)
-from .evaluations import (
-    ENDPOINT_TARGET_TYPE,
-    NODE_TARGET_TYPE,
-    evaluate_endpoint_intent,
-    evaluate_node_intent,
-    evaluate_service_intent,
-)
 from .importers import (
     desired_node_operational_config_defaults,
     desired_node_operational_config_identity,
@@ -48,19 +28,16 @@ from .importers import (
 )
 from .loaders import IntentSourceEntry
 from .loaders import load_default_intent_sources, load_intent_sources
-from .production_inventory_contract import parse_profile_job_input, require_unique_reference
+from .intent_contract import require_unique_reference
 
 try:
     from django.conf import settings
     from django.db import transaction
     from django.utils import timezone
-    from nautobot.dcim.models import Device
     from nautobot.ipam.models import IPAddress
     from nautobot.apps.jobs import BooleanVar, IntegerVar, Job, StringVar, register_jobs
-    from nautobot.virtualization.models import VirtualMachine
 
     from .models import (
-        DeploymentProfileProjection,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -68,7 +45,6 @@ try:
         DesiredNodeOperationalConfig,
         DesiredService,
         DesiredServicePlacement,
-        IntentEvaluation,
         IntentSource,
     )
     from .operations import plan_endpoint_ipam_reconcile
@@ -273,135 +249,6 @@ else:
             self.logger.info("Desired service import summary: %s", _json(counts))
 
 
-    class EvaluateNodeIntent(Job):
-        """Evaluate desired nodes against actual Nautobot Device/VM objects."""
-
-        include_inactive = BooleanVar(
-            default=False,
-            description="Include deprecated and retired DesiredNode rows.",
-        )
-
-        class Meta:
-            name = "Evaluate Node Intent"
-            description = "Persist deterministic DesiredNode evaluations against actual Device and VirtualMachine rows."
-            has_sensitive_variables = False
-
-        def run(self, include_inactive: bool) -> None:
-            nodes = DesiredNode.objects.select_related("realized_device", "realized_vm").order_by("slug")
-            if not include_inactive:
-                nodes = nodes.exclude(lifecycle__in=("deprecated", "retired"))
-
-            device_candidates = list(Device.objects.all().order_by("name"))
-            vm_candidates = list(VirtualMachine.objects.all().order_by("name"))
-            counts = {"evaluated": 0, "created": 0, "updated": 0, "statuses": {}}
-            for desired_node in nodes:
-                payload = evaluate_node_intent(
-                    desired_node,
-                    device_candidates=device_candidates,
-                    vm_candidates=vm_candidates,
-                )
-                created = _upsert_evaluation(payload)
-                counts["evaluated"] += 1
-                counts["created" if created else "updated"] += 1
-                counts["statuses"][payload.status] = counts["statuses"].get(payload.status, 0) + 1
-
-            self.logger.info("Desired node evaluation summary: %s", _json(counts))
-
-
-    class EvaluateEndpointIntent(Job):
-        """Evaluate desired endpoints against actual Nautobot IP and interface facts."""
-
-        include_inactive = BooleanVar(
-            default=False,
-            description="Include endpoints attached to deprecated and retired DesiredNode rows.",
-        )
-
-        class Meta:
-            name = "Evaluate Endpoint Intent"
-            description = "Persist deterministic DesiredEndpoint evaluations against actual IPAddress and interface facts."
-            has_sensitive_variables = False
-
-        def run(self, include_inactive: bool) -> None:
-            endpoints = DesiredEndpoint.objects.select_related(
-                "desired_node",
-                "desired_node__realized_device",
-                "desired_node__realized_vm",
-                "realized_ip_address",
-            ).order_by("desired_node__slug", "endpoint_type", "name")
-            if not include_inactive:
-                endpoints = endpoints.exclude(desired_node__lifecycle__in=("deprecated", "retired"))
-
-            ip_candidates = list(IPAddress.objects.all().order_by("host", "mask_length"))
-            range_candidates = list(
-                DesiredIPRange.objects.exclude(lifecycle__in=("deprecated", "retired")).order_by(
-                    "start_address",
-                    "end_address",
-                    "name",
-                )
-            )
-            node_evaluations = _latest_evaluations(NODE_TARGET_TYPE)
-            counts = {
-                "evaluated": 0,
-                "created": 0,
-                "updated": 0,
-                "range_candidates": len(range_candidates),
-                "statuses": {},
-            }
-            for desired_endpoint in endpoints:
-                desired_node = desired_endpoint.desired_node
-                payload = evaluate_endpoint_intent(
-                    desired_endpoint,
-                    ip_candidates=ip_candidates,
-                    range_candidates=range_candidates,
-                    node_evaluation=node_evaluations.get(str(desired_node.pk)),
-                )
-                created = _upsert_evaluation(payload)
-                counts["evaluated"] += 1
-                counts["created" if created else "updated"] += 1
-                counts["statuses"][payload.status] = counts["statuses"].get(payload.status, 0) + 1
-
-            self.logger.info("Desired endpoint evaluation summary: %s", _json(counts))
-
-
-    class EvaluateServiceIntent(Job):
-        """Evaluate desired services without invoking AI review."""
-
-        include_inactive = BooleanVar(
-            default=False,
-            description="Include deprecated and retired DesiredService rows.",
-        )
-        ai_review_enabled = BooleanVar(
-            default=False,
-            description="Reserve the AI review interface in evaluation facts without executing AI review.",
-        )
-
-        class Meta:
-            name = "Evaluate Service Intent"
-            description = "Persist deterministic DesiredService evaluations from lifecycle, requirements, and dependencies."
-            has_sensitive_variables = False
-
-        def run(self, include_inactive: bool, ai_review_enabled: bool) -> None:
-            services = DesiredService.objects.select_related("intent_source").prefetch_related(
-                "dependencies",
-                "dependencies__resolved_service",
-            ).order_by("catalog_namespace", "catalog_metadata_name", "service_type")
-            if not include_inactive:
-                services = services.exclude(lifecycle__in=("deprecated", "retired"))
-
-            counts = {"evaluated": 0, "created": 0, "updated": 0, "statuses": {}}
-            for desired_service in services:
-                payload = evaluate_service_intent(
-                    desired_service,
-                    ai_review_enabled=ai_review_enabled,
-                )
-                created = _upsert_evaluation(payload)
-                counts["evaluated"] += 1
-                counts["created" if created else "updated"] += 1
-                counts["statuses"][payload.status] = counts["statuses"].get(payload.status, 0) + 1
-
-            self.logger.info("Desired service evaluation summary: %s", _json(counts))
-
-
     class ExportAnsibleHostsIntent(Job):
         """Export minimal Ansible bootstrap inventory from desired nodes."""
 
@@ -473,14 +320,6 @@ else:
                 endpoints = endpoints.exclude(desired_node__lifecycle__in=("deprecated", "retired"))
 
             ip_candidates = list(IPAddress.objects.all().order_by("host", "mask_length"))
-            range_candidates = list(
-                DesiredIPRange.objects.exclude(lifecycle__in=("deprecated", "retired")).order_by(
-                    "start_address",
-                    "end_address",
-                    "name",
-                )
-            )
-            node_evaluations = _latest_evaluations(NODE_TARGET_TYPE)
             counts = {
                 "commit_changes": bool(commit_changes),
                 "endpoints": 0,
@@ -491,8 +330,6 @@ else:
                 "noop": 0,
                 "skipped": 0,
                 "conflicts": 0,
-                "evaluations_created": 0,
-                "evaluations_updated": 0,
             }
             plans = []
 
@@ -516,134 +353,17 @@ else:
                 self.logger.info("IPAM reconcile action: %s", _json(plan_data))
                 _count_ipam_reconcile_action(counts, applied_plan.action)
 
-                desired_node = desired_endpoint.desired_node
-                payload = evaluate_endpoint_intent(
-                    desired_endpoint,
-                    ip_candidates=ip_candidates,
-                    range_candidates=range_candidates,
-                    node_evaluation=node_evaluations.get(str(desired_node.pk)),
-                )
-                payload.observed_facts["ipam_reconcile"] = plan_data
-                created = _upsert_evaluation(payload)
-                counts["evaluations_created" if created else "evaluations_updated"] += 1
-
             self.create_file(
                 "ipam-reconcile-summary.json",
                 json.dumps({"summary": counts, "plans": plans}, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
             )
             self.logger.info("Desired IPAM reconcile summary: %s", _json(counts))
 
-    class ExportProductionInventory(Job):
-        """Compose the deterministic production inventory from desired intent and actual facts."""
-
-        deployment_profiles_json = StringVar(
-            description=(
-                "Canonical deployment_profiles JSON from the ansible_agdev "
-                "vars/deployment_profiles.yml mapping, serialized with the Job-input byte contract."
-            ),
-        )
-        deployment_profiles_digest = StringVar(
-            description="SHA-256 hex digest of the canonical deployment_profiles JSON payload.",
-        )
-
-        class Meta:
-            name = "Export Production Inventory"
-            description = (
-                "Join desired placements, operational configs, and realized actual facts into a "
-                "deterministic schema 1.0 production inventory and companion report."
-            )
-            has_sensitive_variables = False
-
-        def run(self, deployment_profiles_json: str, deployment_profiles_digest: str) -> None:
-            # A malformed payload or digest mismatch is a global contract error that
-            # fails the whole Job before any file is published.
-            profiles = parse_profile_job_input(deployment_profiles_json, deployment_profiles_digest)
-            node_inputs = _build_production_node_inputs()
-            generation_id = str(uuid.uuid4())
-            generated_at = timezone.now().isoformat()
-            composition = compose_production_inventory(
-                node_inputs,
-                profiles,
-                generation_id=generation_id,
-                generated_at=generated_at,
-                deployment_profile_digest=deployment_profiles_digest,
-            )
-            self.create_file("production.yml", render_production_inventory_yml(composition))
-            self.create_file(f"{generation_id}.json", render_production_report_json(composition))
-            self.logger.info("Production inventory export summary: %s", _json(composition.report["summary"]))
-            self.logger.info(
-                "Production inventory export provenance: %s",
-                _json(
-                    {
-                        "generation_id": generation_id,
-                        "report_path": composition.report["report_path"],
-                        "deployment_profile_digest": deployment_profiles_digest,
-                    }
-                ),
-            )
-            if composition.report["skipped"]:
-                self.logger.warning(
-                    "Production inventory skipped hosts: %s", _json(composition.report["skipped"])
-                )
-            if composition.report["drift"]:
-                self.logger.warning(
-                    "Production inventory drift: %s", _json(composition.report["drift"])
-                )
-
-    class SyncDeploymentProfiles(Job):
-        """Sync the read-only deployment_profiles projection from Ansible input."""
-
-        deployment_profiles_json = StringVar(
-            description=(
-                "Canonical deployment_profiles JSON from the ansible_agdev "
-                "vars/deployment_profiles.yml mapping, serialized with the Job-input byte contract."
-            ),
-        )
-        deployment_profiles_digest = StringVar(
-            description="SHA-256 hex digest of the canonical deployment_profiles JSON payload.",
-        )
-
-        class Meta:
-            name = "Sync Deployment Profiles"
-            description = (
-                "Project the Ansible-owned deployment_profiles map into a read-only, digest-keyed "
-                "snapshot for UI and early validation. Ansible stays the authoritative owner."
-            )
-            has_sensitive_variables = False
-
-        def run(self, deployment_profiles_json: str, deployment_profiles_digest: str) -> None:
-            # Share export's ingestion contract so the projection can never accept
-            # a payload that export validation would reject.
-            profiles = parse_profile_job_input(deployment_profiles_json, deployment_profiles_digest)
-            now = timezone.now()
-            with transaction.atomic():
-                # Keep a single current projection; older digests are advisory history only.
-                DeploymentProfileProjection.objects.exclude(digest=deployment_profiles_digest).delete()
-                _projection, created = DeploymentProfileProjection.objects.update_or_create(
-                    digest=deployment_profiles_digest,
-                    defaults={"profiles": profiles, "synced_at": now},
-                )
-            self.logger.info(
-                "Deployment profiles sync summary: %s",
-                _json(
-                    {
-                        "deployment_profile_digest": deployment_profiles_digest,
-                        "profiles": len(profiles),
-                        "created": bool(created),
-                    }
-                ),
-            )
-
     jobs = (
         PreviewIntentSourceAnalysis,
         ImportIntentSources,
         AnalyzeIntentSources,
-        EvaluateNodeIntent,
-        EvaluateEndpointIntent,
-        EvaluateServiceIntent,
         ExportAnsibleHostsIntent,
-        ExportProductionInventory,
-        SyncDeploymentProfiles,
         ReconcileDesiredIPAMIntent,
     )
     register_jobs(*jobs)
@@ -657,128 +377,6 @@ def _configured_source_file():
 
 def _json(value) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True)
-
-
-def _device_custom_fields(device) -> dict:
-    data = dict(getattr(device, "custom_field_data", {}) or {})
-    if data:
-        return data
-    if hasattr(device, "cf"):
-        return dict(device.cf or {})
-    return {}
-
-
-def _production_endpoint_input(endpoint):
-    if endpoint is None:
-        return None
-    return EndpointInput(
-        name=endpoint.name,
-        endpoint_type=endpoint.endpoint_type,
-        node_slug=endpoint.desired_node.slug,
-        ip_address=endpoint.ip_address,
-        dns_name=endpoint.dns_name,
-        mdns_name=endpoint.mdns_name,
-    )
-
-
-def _production_operational_config_input(operational_config):
-    if operational_config is None:
-        return None
-    return OperationalConfigInput(
-        id=str(operational_config.pk),
-        actual_state_policy=operational_config.actual_state_policy,
-        connection_path=operational_config.connection_path,
-        power_control=operational_config.power_control,
-        is_laptop=bool(operational_config.is_laptop),
-        expected_host_os=operational_config.expected_host_os,
-        declared_host_os=operational_config.declared_host_os,
-        local_endpoint=_production_endpoint_input(operational_config.local_endpoint),
-        tailscale_endpoint=_production_endpoint_input(operational_config.tailscale_endpoint),
-        ansible_port=operational_config.ansible_port,
-    )
-
-
-def _production_realized_state(node):
-    if node.realized_device_id:
-        return RealizedState(
-            realized_type="device",
-            facts=read_actual_facts(_device_custom_fields(node.realized_device)),
-            nautobot_device_id=str(node.realized_device_id),
-        )
-    if node.realized_vm_id:
-        # Schema 1.0 supports nodeutils-backed Devices only; a realized VM is
-        # surfaced to the composer so it is skipped with unsupported_actual_type.
-        return RealizedState(realized_type="virtual_machine", facts=read_actual_facts({}))
-    return None
-
-
-def _build_production_node_inputs():
-    """Assemble pure composer inputs from persisted nintent and Nautobot state."""
-
-    operational_by_node = {
-        oc.desired_node_id: oc
-        for oc in DesiredNodeOperationalConfig.objects.select_related(
-            "local_endpoint",
-            "local_endpoint__desired_node",
-            "tailscale_endpoint",
-            "tailscale_endpoint__desired_node",
-        )
-    }
-    placements_by_node: dict = defaultdict(list)
-    for placement in DesiredServicePlacement.objects.all().order_by("instance_name"):
-        placements_by_node[placement.desired_node_id].append(placement)
-
-    nodes = (
-        DesiredNode.objects.select_related("realized_device", "realized_vm")
-        .order_by("slug")
-    )
-    node_inputs = []
-    for node in nodes:
-        placements = tuple(
-            PlacementInput(
-                id=str(placement.pk),
-                instance_name=placement.instance_name,
-                deployment_profile=placement.deployment_profile,
-                config_schema_version=placement.config_schema_version,
-                desired_state=placement.desired_state,
-                config=placement.config or {},
-            )
-            for placement in placements_by_node.get(node.pk, ())
-        )
-        node_inputs.append(
-            NodeInput(
-                id=str(node.pk),
-                slug=node.slug,
-                name=node.name,
-                lifecycle=node.lifecycle,
-                node_type=node.node_type,
-                operational_config=_production_operational_config_input(operational_by_node.get(node.pk)),
-                placements=placements,
-                realized=_production_realized_state(node),
-            )
-        )
-    return node_inputs
-
-
-def _upsert_evaluation(payload) -> bool:
-    _, created = IntentEvaluation.objects.update_or_create(
-        target_type=payload.target_type,
-        target_id=payload.target_id,
-        source_hash=payload.source_hash,
-        defaults={
-            **payload.as_defaults(),
-            "reviewed_at": timezone.now(),
-        },
-    )
-    return created
-
-
-def _latest_evaluations(target_type: str) -> dict:
-    evaluations = {}
-    rows = IntentEvaluation.objects.filter(target_type=target_type).order_by("target_id", "-reviewed_at", "-created")
-    for evaluation in rows:
-        evaluations.setdefault(str(evaluation.target_id), evaluation)
-    return evaluations
 
 
 def _apply_ipam_reconcile_plan(plan, desired_endpoint, ip_address_model):

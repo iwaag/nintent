@@ -19,7 +19,6 @@ class ObjectViewTemplateTests(unittest.TestCase):
             "desirednodeoperationalconfig.html",
             "desiredservice.html",
             "desiredserviceplacement.html",
-            "intentevaluation.html",
             "intentsource.html",
         }
 
@@ -41,7 +40,6 @@ class ObjectViewTemplateTests(unittest.TestCase):
         # ObjectView lookup, so guard them explicitly against accidental removal.
         expected_templates = {
             "desiredhost_quick_add.html",
-            "desiredserviceplacement_quick_add.html",
         }
 
         missing_templates = sorted(
