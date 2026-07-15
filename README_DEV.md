@@ -38,41 +38,12 @@ loader, importer, and analysis code that can run without Nautobot:
 python3 -m unittest discover -s nautobot_intent_catalog/tests
 ```
 
-Production inventory schema 1.0 and deployment-profile Job inputs are validated
-by the Django-free `production_inventory_contract.py` module. Its scenario
-fixtures cover supported platforms, actual-data freshness, reference failures,
-profile validation, drift, power policy, and placement-variable conflicts.
+Desired-state reference validation used by the YAML loader lives in the Django-free
+`intent_contract.py`. Production composition, profile validation, actual-fact policy, and drift
+comparators live and are tested in nctl; do not reintroduce those processing rules here.
 
-### Quick Service Placement test boundary
-
-The Quick Service Placement feature keeps its validation in Django-free layers so
-the contract is testable without Nautobot:
-
-- `tests/test_deployment_profiles.py` covers the read-only deployment_profiles
-  projection accessor (`deployment_profiles.py`): export-contract ingestion
-  (`project_deployment_profiles`, sharing `parse_profile_job_input` /
-  `validate_deployment_profiles` with export), read-time revalidation, and the
-  explicit "not synced" signal (`DeploymentProfilesUnavailable`).
-- `tests/test_operations_placements.py` covers the placement operation
-  (`operations/placements.py`): profile-derived `config_schema_version`, fixed
-  `assignment_source="manual"`, slug-derived default `instance_name`, config
-  validation via `map_placement_config`, endpoint ownership, instance uniqueness,
-  and that derived fields are not operation inputs (so they cannot be hand-typed).
-
-These require a Nautobot runtime and are therefore **not** covered by local unit
-tests; verify them in a real Nautobot environment:
-
-- `DeploymentProfileProjection` model persistence, the `SyncDeploymentProfiles`
-  Job upsert/prune, and `load_deployment_profiles()` reading from the DB.
-- The Quick Add form's dynamic `config` field generation from the selected
-  profile schema, its "not synced" `clean()` error, and endpoint queryset
-  filtering (`DesiredServicePlacementQuickAddForm`).
-- The Quick Add view render/redirect and `desired_service` prefill, plus the
-  "Place this service" link on the service detail page.
-- That the regular CRUD `DesiredServicePlacementForm` and the Quick Add path stay
-  consistent in omitting the derived `config_schema_version` / `assignment_source`
-  inputs (the operation enforces the derived/fixed values; the model defaults back
-  it; `tests/test_templates.py` guards the FormView templates against removal).
+The local suite does not load Django/Nautobot. Model migrations, GraphQL registration, Job discovery,
+and UI views must also be verified in the running Nautobot environment after deployment.
 
 ## Nautobot Verification
 

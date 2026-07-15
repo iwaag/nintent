@@ -3,7 +3,7 @@
 Nautobot App for importing and analyzing cluster intent. The current code
 supports intent sources, desired services, desired dependencies, desired nodes,
 desired endpoints, explicit service placements, typed node operational policy,
-deterministic desired-vs-actual evaluations, and dnsmasq DNS/DHCP export.
+and transactional desired-state/IPAM operations.
 
 ## Install
 
@@ -55,32 +55,17 @@ nautobot-server migrate nautobot_intent_catalog
 
 ## Current Scope
 
-- Imports `intent_sources` YAML rows into `IntentSource`.
-- Persists generated `DesiredService` records from source analysis.
-- Persists normalized `DesiredDependency` rows from Backstage `spec.dependsOn`.
-- Persists `DesiredNode` and `DesiredEndpoint` rows from YAML.
-- Persists `DesiredServicePlacement` and `DesiredNodeOperationalConfig` rows
-  from strict environment YAML or Nautobot CRUD screens.
-- Provides `Quick Host Add` for creating one desired node and one primary endpoint from one Nautobot form.
-- Provides `Quick Service Placement` for placing one service on one node from one
-  Nautobot form, with profile-derived config schema and `manual` assignment.
-- Projects the Ansible-owned `deployment_profiles` map into a read-only,
-  digest-keyed snapshot via the `Sync Deployment Profiles` Job for UI choices and
-  early validation.
-- Persists `IntentEvaluation` rows for desired-vs-actual gap data.
-- Evaluates desired services, desired nodes, and desired endpoints against
-  deterministic state and Nautobot actual objects.
-- Exports deterministic dnsmasq DNS records and DHCP reservations from eligible
-  desired endpoints.
-- Keeps a diagnostic YAML source view at `/plugins/intent-catalog/sources/source-yaml/`.
-- Provides dry-run and import Nautobot Jobs for intent source analysis.
-- Detects Backstage `Component` catalog entries for `service`, `website`, and `worker` desired services.
-- Does not run remediation review yet.
+- Imports strict desired-state YAML into ledger models.
+- Persists analyzed services and dependencies from configured source catalogs.
+- Stores desired nodes, endpoints, IP ranges, service placements, and node operational policy.
+- Provides normal Nautobot CRUD surfaces plus Quick Host Add.
+- Exposes desired state through Nautobot GraphQL for nctl reads and selected REST write surfaces.
+- Keeps transactional Jobs for source import/analysis, bootstrap inventory export, and desired IPAM reconciliation.
+- Does not persist desired-vs-actual evaluations or compose consumer artifacts; nctl owns drift,
+  dnsmasq rendering, and production inventory composition.
 
-For the model intent and design boundaries behind `IntentSource`,
-`DesiredService`, `DesiredDependency`, `DesiredNode`, `DesiredEndpoint`,
-`DesiredServicePlacement`, `DesiredNodeOperationalConfig`, and
-`IntentEvaluation`, see [CONCEPT.md](CONCEPT.md).
+For the surviving model intent and storage boundaries, see [CONCEPT.md](CONCEPT.md). For current
+operator commands, see [README_QUICK.md](README_QUICK.md).
 
 ## Intent Source YAML
 
@@ -245,107 +230,28 @@ needs multiple endpoints, non-primary endpoint types, realized object links, or
 fine-grained endpoint edits. Use YAML import when the desired state should be
 managed from a source file or reviewed as a batch.
 
-## Quick Service Placement
+## Deployment profiles and service placements
 
-Use `Quick Service Placement` for the common case of placing one service on one
-node. It is available from the `Intent Catalog` navigation near `Service
-Placements`, directly at:
+Service placements remain ordinary `DesiredServicePlacement` ledger rows created through strict
+YAML import or the regular Nautobot CRUD screen. The projection-dependent Quick Service Placement
+form was removed in 0.6.0.
 
-```text
-/plugins/intent-catalog/placements/quick-add/
-```
+`deployment_profiles` are owned by Ansible at
+`ansible_agdev/vars/deployment_profiles.yml`. Nautobot stores no copy or digest projection. nctl
+reads and validates the file directly while composing the production inventory.
 
-and as the `Place this service` button on a `DesiredService` detail page, which
-opens the form with that service preselected. Because `DesiredService` records
-are collected from intent sources and cannot be hand-created, starting from the
-service detail page removes the need to hunt for a service to reference.
+## dnsmasq and drift consumers
 
-Quick Service Placement does not create a separate model. It writes one
-canonical `DesiredServicePlacement`, the same record used by YAML import and the
-normal CRUD screen. The operator only chooses what they actually decide:
+The dnsmasq renderer and reconciliation engine are owned by nctl. This App stores desired state and
+exposes it through GraphQL; nctl joins it with Nautobot actual objects and nodeutils dumps.
 
-- the service (`desired_service`, preselected from the detail page)
-- the node (`desired_node`)
-- the deployment profile (`deployment_profile`)
-- the profile's config values (`config`)
+`nctl render dnsmasq` computes actual-node/interface matches and DHCP MAC candidates fresh. No
+Evaluate Job or persisted evaluation prerequisite exists. Missing/ambiguous actual nodes, IPs,
+interfaces, or MACs appear in the JSON `skipped` details.
 
-Other fields are derived or optional:
-
-- `config_schema_version` is **not** an operator input. It is derived from the
-  selected profile (the contract supports a single schema version).
-- `assignment_source` is fixed to `manual` so manual placements stay
-  distinguishable from future generated ones.
-- `instance_name` defaults to the service slug when left blank.
-- `desired_endpoint` is optional and limited to endpoints on the selected node.
-- `deployment_profile` is a dropdown sourced from the synced deployment-profiles
-  projection, and `config` fields are generated from that profile's `variables`
-  schema and validated against it before saving.
-
-The deployment-profiles projection must be synced first (see
-[deployment_profiles ownership](#deployment_profiles-ownership-and-sync)). Until
-then the form cannot offer profile choices or a config schema, so it shows a
-clear error asking you to run the sync Job rather than presenting an empty
-picker.
-
-The regular `DesiredServicePlacement` CRUD screen follows the same rule: it does
-not expose `config_schema_version` or `assignment_source` as hand-typed fields.
-Use YAML import when placements should be managed from a source file or reviewed
-as a batch.
-
-## deployment_profiles ownership and sync
-
-`deployment_profiles` are **owned by Ansible** (`ansible_agdev`
-`vars/deployment_profiles.yml`). Nautobot holds only a read-only projection used
-for UI choices and early validation; it never becomes an editable authoritative
-copy, and production inventory export still revalidates the map at export time.
-
-Run the `Sync Deployment Profiles` Job with the same canonical
-`deployment_profiles_json` + `deployment_profiles_digest` inputs passed to
-`Export Production Inventory`. The Job validates the input through the shared
-export-input contract and stores a single digest-keyed projection. Quick Service
-Placement reads this projection for profile choices and config schemas.
-
-## dnsmasq rendering
-
-The dnsmasq consumer-format renderer is owned by `nctl`; this app only stores
-and exposes the desired endpoints, IP ranges, and intent evaluations that it
-reads. Use `nctl render dnsmasq` instead of a Nautobot export Job.
-
-`cname` records require `vpn_dns_name` as the alias target. `mdns_name` is kept
-as endpoint metadata and is intentionally not exported as a dnsmasq record.
-
-DHCP reservations use the same endpoint selection criteria plus deterministic
-actual-state requirements from the latest `Evaluate Endpoint Intent` and
-`Evaluate Node Intent` results:
-
-- the related desired node has exactly one actual node match
-- the endpoint evaluation has exactly one DHCP MAC candidate
-- the MAC address is valid and normalized to lower-case colon format
-
-When these conditions are met, `dnsmasq-records.conf` includes:
-
-```text
-dhcp-host=<mac>,<dns_name>,<ip>
-```
-
-`ip_address` values with CIDR suffixes are normalized to host addresses by the
-`nctl` renderer. DNS records can still be rendered when DHCP is skipped;
-missing actual nodes, missing MACs, ambiguous interfaces, invalid MACs, and
-inactive lifecycles are reported by `nctl render dnsmasq --json`. MAC inference
-and desired-vs-actual comparison remain inputs from Nautobot evaluation jobs.
-
-Run the jobs in this order when DHCP reservations depend on discovered actual
-node/interface facts:
-
-1. `Evaluate Node Intent`
-2. `Evaluate Endpoint Intent`
-3. `Reconcile Desired IPAM Intent` when you want to dry-run or apply IPAM links
-4. `nctl render dnsmasq` outside Nautobot
-
-The endpoint evaluation consumes the latest stored node evaluation. This allows
-an actual node discovered by normalized name matching, such as desired `pcmain`
-to actual `pcmain.local`, to provide interface and MAC candidates for DHCP
-reservation export.
+`nctl drift --json` is the single structured desired-vs-actual query surface for humans, AI, and
+future automation. `nctl render production` reads the Ansible-owned deployment profiles directly
+and writes the validated production inventory and companion report.
 
 ## REST API
 
@@ -364,112 +270,27 @@ Standard Nautobot REST conventions apply: authenticate with
 `Authorization: Token <api-token>`, use `POST`/`PATCH`/`DELETE` for writes, and
 filter with the same fields exposed by `DesiredNodeFilterSet` and
 `DesiredEndpointFilterSet` (for example `?slug=agstudio` or
-`?desired_node=<uuid>`). Other models (`DesiredService`,
-`DesiredServicePlacement`, `IntentEvaluation`, etc.) are not yet exposed
-through the REST API and remain UI/ORM-only for now.
+`?desired_node=<uuid>`). Other models such as `DesiredService` and `DesiredServicePlacement` are not yet exposed through
+the REST API and remain GraphQL-read/UI/ORM-managed for now.
 
-## Intent Evaluations
+## Reconciliation and IPAM boundary
 
-`IntentEvaluation` stores durable desired-vs-actual review data for UI, API,
-and future agent workflows. It intentionally uses `target_type` and `target_id`
-instead of a generic relation so external automation can address targets with a
-small stable key.
+nintent 0.6.0 removed `IntentEvaluation` and the Evaluate Node/Endpoint/Service Jobs. Deterministic
+evaluation is computed fresh by nctl comparators instead of stored as a second, staleable source of
+truth.
 
-The initial upsert key is:
+`Reconcile Desired IPAM Intent` remains because it is a transactional ledger write. It defaults to
+dry-run and writes `ipam-reconcile-summary.json`; with `commit_changes` it may create or link a
+non-conflicting `IPAddress`. It no longer upserts evaluation rows as a side effect.
 
-```text
-target_type, target_id, source_hash
-```
+Stable integration boundaries are:
 
-Structured deterministic fields are kept separate from optional AI review:
-
-- deterministic fields: `deterministic_summary`, `actual_refs`,
-  `observed_facts`, `expected_facts`, `gap_summary`, `recommended_actions`
-- AI fields: `ai_review`, `review_model`, `reviewed_at`
-
-`ai_review` may be empty. Deterministic evaluations and recommended actions are
-valid without any model-generated review.
-
-Run `Evaluate Service Intent` to compare `DesiredService` rows with their
-lifecycle, requirements, and `DesiredDependency` resolution state. Missing
-nodeutils or monitoring facts are stored as `unknown` optional input instead of
-failing the evaluation. The Job reserves an AI review interface in
-`observed_facts.ai_review` but does not call a model; future review tasks should
-consume the deterministic fields first and write generated review output only to
-`ai_review` and `review_model`.
-
-Run `Evaluate Node Intent` to compare `DesiredNode` rows with actual Nautobot
-`Device` and `VirtualMachine` rows. Explicit `realized_device` or `realized_vm`
-links are authoritative and are evaluated before candidate discovery, but a
-link to an object type outside `accepted_actual_types` is a conflict. Unlinked
-nodes are matched only against accepted actual types and then ranked
-deterministically by hostname/name, serial or UUID, and platform or OS hints
-from `expected_spec` and actual object fields/custom fields. Built-in home-lab
-suffixes are normalized for name comparison, so `pcmain` and `pcmain.local` are
-treated as the same node identity while unrelated FQDNs such as
-`db01.prod.example.com` are not collapsed to `db01`. Ambiguous matches are not
-adopted automatically; they are stored as `conflict` evaluations with
-review-required actions.
-
-Run `Evaluate Endpoint Intent` to compare `DesiredEndpoint` rows with
-`IPAddress` rows and interface facts from the related realized node or the
-latest stored node evaluation. It records IP address mismatches as `conflict`,
-missing or unlinked IP addresses as `partial`, and DHCP MAC candidates in
-`observed_facts`. Endpoints with no MAC or multiple MAC-bearing interfaces are
-not considered DHCP-reservation-ready. `nctl render dnsmasq` consumes these
-deterministic facts through GraphQL and emits `dhcp-host=` lines only when the
-reservation is unambiguous.
-
-Run `Reconcile Desired IPAM Intent` to optionally reflect
-`DesiredEndpoint.ip_policy=dhcp_reserved` into Nautobot `IPAddress` rows. The
-Job defaults to dry-run and writes an `ipam-reconcile-summary.json` JobResult
-file. With `commit_changes` enabled, it can create a missing IPAddress or link
-an existing non-conflicting IPAddress to `DesiredEndpoint.realized_ip_address`.
-It does not overwrite existing IPAddress DNS names, assignment fields, or
-non-DHCP types; conflicts are logged and stored in endpoint evaluation
-`observed_facts.ipam_reconcile`.
-
-Initial recommended action examples:
-
-- `resolve_service_dependency`
-- `review_service_lifecycle`
-- `link_desired_node_to_actual`
-- `create_or_link_ip_address`
-- `select_dhcp_interface`
-
-Recommended actions are JSON objects with a stable action name, a target, a
-reason, and a review flag. Optional keys carry action-specific context such as
-`dependency`, `actual_ref`, or `candidates`.
-
-```json
-{
-  "action": "resolve_service_dependency",
-  "target": {"id": "<desired-service-uuid>", "name": "api-service"},
-  "dependency": {
-    "dependency_kind": "component",
-    "namespace": "default",
-    "name": "database",
-    "raw_ref": "component:default/database",
-    "dependency_type": "component",
-    "resolution_status": "unresolved"
-  },
-  "reason": "A desired service dependency is unresolved.",
-  "requires_review": true
-}
-```
-
-Agent and Ansible integrations should treat these surfaces as the stable query
-boundary:
-
-- desired state: `DesiredService`, `DesiredDependency`, `DesiredNode`,
-  `DesiredEndpoint`
-- actual state: Nautobot `Device`, `VirtualMachine`, `IPAddress`, and related
-  interface facts referenced from evaluations
-- evaluation state: `IntentEvaluation.target_type`, `target_id`, `status`,
-  `deterministic_summary`, `actual_refs`, `observed_facts`, `expected_facts`,
-  `gap_summary`, `recommended_actions`
-- optional IPAM apply boundary: `Reconcile Desired IPAM Intent`
-- dnsmasq deployment input: output from `nctl render dnsmasq`
+- desired state: nintent models read through Nautobot GraphQL;
+- actual ledger state: Nautobot DCIM/IPAM GraphQL objects;
+- observed state: nodeutils dumps read by nctl;
+- reconciliation result: `nctl drift --json` (`nctl.drift.v1`);
+- artifacts: `nctl render dnsmasq` and `nctl render production`;
+- optional IPAM write: `Reconcile Desired IPAM Intent`.
 
 For local checks that do not require Nautobot:
 
