@@ -16,11 +16,13 @@ else:
         return app_config.get("dashboard_url")
 
     _dashboard_items = ()
-    _dashboard_url = _configured_dashboard_url()
-    if _dashboard_url:
+    if _configured_dashboard_url():
+        # NavMenuItem.link is always passed through reverse(), so it must be a URL
+        # name, not the raw (possibly external) dashboard_url; dashboard_redirect is a
+        # thin view that 302s to the configured URL.
         _dashboard_items = (
             NavMenuItem(
-                link=_dashboard_url,
+                link="plugins:nautobot_intent_catalog:dashboard_redirect",
                 name="nctl Dashboard",
             ),
         )
