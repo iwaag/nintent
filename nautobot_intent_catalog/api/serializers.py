@@ -2,7 +2,7 @@
 
 from nautobot.apps.api import NautobotModelSerializer
 
-from ..models import DesiredEndpoint, DesiredNode
+from ..models import DesiredEndpoint, DesiredNode, DesiredService
 
 
 class DesiredNodeSerializer(NautobotModelSerializer):
@@ -10,6 +10,14 @@ class DesiredNodeSerializer(NautobotModelSerializer):
 
     class Meta:
         model = DesiredNode
+        fields = "__all__"
+
+
+class DesiredServiceSerializer(NautobotModelSerializer):
+    """Serializer for desired service intent."""
+
+    class Meta:
+        model = DesiredService
         fields = "__all__"
 
 

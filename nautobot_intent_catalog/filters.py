@@ -54,6 +54,7 @@ else:
                 "lifecycle",
                 "intent_source",
                 "catalog_owner",
+                "reconciliation_status",
             )
 
         def search(self, queryset, name, value):
@@ -103,6 +104,7 @@ else:
                 "intent_source",
                 "realized_device",
                 "realized_vm",
+                "reconciliation_status",
             )
 
         def search(self, queryset, name, value):

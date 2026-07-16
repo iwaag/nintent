@@ -13,12 +13,12 @@ class IntentCatalogConfig(NautobotAppConfig):
     name = "nautobot_intent_catalog"
     verbose_name = "Intent Catalog"
     description = "Manage and analyze cluster desired state and intent."
-    version = "0.6.0"
+    version = "0.7.0"
     author = ""
     author_email = ""
     base_url = "intent-catalog"
     required_settings = []
-    default_settings = {}
+    default_settings = {"dashboard_url": None}
     home_view_name = "plugins:nautobot_intent_catalog:intentsource_list"
 
 

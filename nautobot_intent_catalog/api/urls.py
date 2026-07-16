@@ -6,6 +6,7 @@ from . import views
 
 router = OrderedDefaultRouter(view_name="Intent Catalog")
 router.register("nodes", views.DesiredNodeViewSet)
+router.register("services", views.DesiredServiceViewSet)
 router.register("endpoints", views.DesiredEndpointViewSet)
 
 urlpatterns = router.urls

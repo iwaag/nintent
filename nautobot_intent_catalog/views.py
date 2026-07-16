@@ -99,6 +99,9 @@ else:
 
         queryset = DesiredService.objects.select_related("intent_source")
 
+        def get_extra_context(self, request, instance):
+            return {"dashboard_url": _configured_dashboard_url()}
+
 
     class DesiredServiceEditView(ObjectEditView):
         """Edit a desired service record."""
@@ -152,6 +155,9 @@ else:
         """Show one desired node record."""
 
         queryset = DesiredNode.objects.select_related("intent_source", "realized_device", "realized_vm")
+
+        def get_extra_context(self, request, instance):
+            return {"dashboard_url": _configured_dashboard_url()}
 
 
     class DesiredNodeEditView(ObjectEditView):
@@ -356,3 +362,11 @@ def _configured_source_file():
     plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
     app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
     return app_config.get("intent_sources_file")
+
+
+def _configured_dashboard_url():
+    """Return the nctl dashboard URL from PLUGINS_CONFIG, if set (deployment config, not a model)."""
+
+    plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
+    app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
+    return app_config.get("dashboard_url")

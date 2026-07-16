@@ -1,10 +1,30 @@
 """Navigation items for the Nautobot Intent Catalog App."""
 
 try:
+    from django.conf import settings
+
     from nautobot.apps.ui import NavMenuGroup, NavMenuItem, NavMenuTab
 except ImportError:  # pragma: no cover - allows loader-only tests without Nautobot.
     menu_items = ()
 else:
+
+    def _configured_dashboard_url():
+        """Read the nctl dashboard link from PLUGINS_CONFIG (deployment config, not a model)."""
+
+        plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
+        app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
+        return app_config.get("dashboard_url")
+
+    _dashboard_items = ()
+    _dashboard_url = _configured_dashboard_url()
+    if _dashboard_url:
+        _dashboard_items = (
+            NavMenuItem(
+                link=_dashboard_url,
+                name="nctl Dashboard",
+            ),
+        )
+
     menu_items = (
         NavMenuTab(
             name="Intent Catalog",
@@ -52,7 +72,8 @@ else:
                             link="plugins:nautobot_intent_catalog:source_yaml_list",
                             name="Source YAML",
                         ),
-                    ),
+                    )
+                    + _dashboard_items,
                 ),
             ),
         ),

@@ -2,9 +2,9 @@
 
 from nautobot.apps.api import NautobotModelViewSet
 
-from ..filters import DesiredEndpointFilterSet, DesiredNodeFilterSet
-from ..models import DesiredEndpoint, DesiredNode
-from .serializers import DesiredEndpointSerializer, DesiredNodeSerializer
+from ..filters import DesiredEndpointFilterSet, DesiredNodeFilterSet, DesiredServiceFilterSet
+from ..models import DesiredEndpoint, DesiredNode, DesiredService
+from .serializers import DesiredEndpointSerializer, DesiredNodeSerializer, DesiredServiceSerializer
 
 
 class DesiredNodeViewSet(NautobotModelViewSet):
@@ -13,6 +13,14 @@ class DesiredNodeViewSet(NautobotModelViewSet):
     queryset = DesiredNode.objects.all()
     serializer_class = DesiredNodeSerializer
     filterset_class = DesiredNodeFilterSet
+
+
+class DesiredServiceViewSet(NautobotModelViewSet):
+    """Read/write API endpoint for desired services."""
+
+    queryset = DesiredService.objects.all()
+    serializer_class = DesiredServiceSerializer
+    filterset_class = DesiredServiceFilterSet
 
 
 class DesiredEndpointViewSet(NautobotModelViewSet):

@@ -51,6 +51,19 @@
                         <th scope="row">Description</th>
                         <td>{{ object.description|default:"-" }}</td>
                     </tr>
+                    <tr>
+                        <th scope="row">Reconciliation Status</th>
+                        <td>
+                            {{ object.get_reconciliation_status_display|default:"-" }}
+                            {% if dashboard_url %}
+                                <a href="{{ dashboard_url }}" target="_blank" rel="noopener">(view dashboard)</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Reconciliation Checked At</th>
+                        <td>{{ object.reconciliation_checked_at|default:"-" }}</td>
+                    </tr>
                 </table>
             </div>
 

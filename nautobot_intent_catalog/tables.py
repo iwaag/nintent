@@ -4,6 +4,7 @@ from __future__ import annotations
 
 try:
     import django_tables2 as tables
+    from django.utils.html import format_html
     from nautobot.apps.tables import BaseTable, ButtonsColumn, ToggleColumn
 
     from .models import (
@@ -20,6 +21,23 @@ except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in loc
     pass
 else:
     TABLE_ACTION_BUTTONS = ("edit", "delete")
+
+    RECONCILIATION_BADGE_CLASSES = {
+        "converged": "label-success",
+        "drifting": "label-danger",
+        "converging": "label-warning",
+        "unknown": "label-default",
+    }
+
+    def _render_reconciliation_status(record):
+        """Render reconciliation_status as a colored Bootstrap label."""
+
+        status = record.reconciliation_status
+        if not status:
+            return "—"
+        css_class = RECONCILIATION_BADGE_CLASSES.get(status, "label-default")
+        label = record.get_reconciliation_status_display() or status
+        return format_html('<span class="label {}">{}</span>', css_class, label)
 
 
     class IntentSourceTable(BaseTable):
@@ -60,12 +78,18 @@ else:
         name = tables.LinkColumn()
         intent_source = tables.LinkColumn()
         dependency_count = tables.Column(empty_values=(), verbose_name="Dependencies")
+        reconciliation_status = tables.Column(empty_values=(), verbose_name="Reconciliation")
         actions = ButtonsColumn(DesiredService, buttons=TABLE_ACTION_BUTTONS)
 
         def render_dependency_count(self, record):
             """Return dependency count for display."""
 
             return record.dependencies.count()
+
+        def render_reconciliation_status(self, record):
+            """Return the reconciliation status badge, nctl's derived cache of the last run."""
+
+            return _render_reconciliation_status(record)
 
         class Meta(BaseTable.Meta):
             model = DesiredService
@@ -78,6 +102,7 @@ else:
                 "intent_source",
                 "catalog_owner",
                 "dependency_count",
+                "reconciliation_status",
                 "actions",
             )
             default_columns = (
@@ -89,6 +114,7 @@ else:
                 "intent_source",
                 "catalog_owner",
                 "dependency_count",
+                "reconciliation_status",
                 "actions",
             )
 
@@ -134,12 +160,18 @@ else:
         realized_device = tables.LinkColumn()
         realized_vm = tables.LinkColumn()
         endpoint_count = tables.Column(empty_values=(), verbose_name="Endpoints")
+        reconciliation_status = tables.Column(empty_values=(), verbose_name="Reconciliation")
         actions = ButtonsColumn(DesiredNode, buttons=TABLE_ACTION_BUTTONS)
 
         def render_endpoint_count(self, record):
             """Return endpoint count for display."""
 
             return record.desired_endpoints.count()
+
+        def render_reconciliation_status(self, record):
+            """Return the reconciliation status badge, nctl's derived cache of the last run."""
+
+            return _render_reconciliation_status(record)
 
         class Meta(BaseTable.Meta):
             model = DesiredNode
@@ -154,6 +186,7 @@ else:
                 "realized_device",
                 "realized_vm",
                 "endpoint_count",
+                "reconciliation_status",
                 "actions",
             )
             default_columns = (
@@ -164,6 +197,7 @@ else:
                 "role",
                 "intent_source",
                 "endpoint_count",
+                "reconciliation_status",
                 "actions",
             )
 
