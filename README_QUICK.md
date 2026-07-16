@@ -37,7 +37,6 @@ read directly by `nctl render production`; nintent has no profile projection or 
 | `Preview Intent Source Analysis` | Analyze configured sources without writes. |
 | `Import Intent Sources` | Import strict desired-state YAML into ledger models. |
 | `Analyze Intent Sources` | Analyze source catalogs and persist services/dependencies. |
-| `Export Ansible Hosts Intent` | Export the mDNS bootstrap inventory. |
 | `Reconcile Desired IPAM Intent` | Dry-run/apply `dhcp_reserved` endpoints into `IPAddress`. |
 
 The old Evaluate Jobs, production inventory export Job, profile sync Job, `IntentEvaluation`, and
@@ -48,6 +47,7 @@ The old Evaluate Jobs, production inventory export Job, profile sync Job, `Inten
 ```bash
 nctl drift --json
 nctl render dnsmasq --json
+nctl render hosts-intent --out ansible_agdev/inventories/generated
 nctl render production --out ansible_agdev/inventories/generated
 nctl dashboard
 ```

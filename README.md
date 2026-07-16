@@ -60,7 +60,7 @@ nautobot-server migrate nautobot_intent_catalog
 - Stores desired nodes, endpoints, IP ranges, service placements, and node operational policy.
 - Provides normal Nautobot CRUD surfaces plus Quick Host Add.
 - Exposes desired state through Nautobot GraphQL for nctl reads and selected REST write surfaces.
-- Keeps transactional Jobs for source import/analysis, bootstrap inventory export, and desired IPAM reconciliation.
+- Keeps transactional Jobs for source import/analysis and desired IPAM reconciliation.
 - Does not persist desired-vs-actual evaluations or compose consumer artifacts; nctl owns drift,
   dnsmasq rendering, and production inventory composition.
 
