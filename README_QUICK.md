@@ -49,12 +49,17 @@ The old Evaluate Jobs, production inventory export Job, profile sync Job, `Inten
 nctl drift --json
 nctl render dnsmasq --json
 nctl render production --out ansible_agdev/inventories/generated
+nctl dashboard
 ```
 
 `nctl drift` computes fresh state from nintent desired records, Nautobot actual records, and
 nodeutils dumps. `render dnsmasq` computes MAC readiness fresh from the same source snapshot; no
 evaluation Job prerequisite exists. Run `Reconcile Desired IPAM Intent` only when IPAddress
-creation/linking is wanted.
+creation/linking is wanted. `nctl dashboard` runs drift, writes the static dashboard, and PATCHes
+`reconciliation_status`/`reconciliation_checked_at` onto `DesiredNode`/`DesiredService` rows over
+REST — a derived cache of the last run, read-only in nintent's UI. Set
+`PLUGINS_CONFIG["nautobot_intent_catalog"]["dashboard_url"]` to wherever the dashboard is served
+to get a nav-menu link and a "(view dashboard)" link on each node/service page.
 
 ## Local tests
 

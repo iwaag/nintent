@@ -255,7 +255,7 @@ and writes the validated production inventory and companion report.
 
 ## REST API
 
-`DesiredNode` and `DesiredEndpoint` are exposed read/write through Nautobot's
+`DesiredNode`, `DesiredEndpoint`, and `DesiredService` are exposed read/write through Nautobot's
 REST API so both humans and agents can query desired state without going
 through the UI or a Django shell:
 
@@ -264,14 +264,41 @@ GET  /api/plugins/intent-catalog/nodes/
 GET  /api/plugins/intent-catalog/nodes/<uuid>/
 GET  /api/plugins/intent-catalog/endpoints/
 GET  /api/plugins/intent-catalog/endpoints/<uuid>/
+GET  /api/plugins/intent-catalog/services/
+GET  /api/plugins/intent-catalog/services/<uuid>/
 ```
 
 Standard Nautobot REST conventions apply: authenticate with
 `Authorization: Token <api-token>`, use `POST`/`PATCH`/`DELETE` for writes, and
-filter with the same fields exposed by `DesiredNodeFilterSet` and
-`DesiredEndpointFilterSet` (for example `?slug=agstudio` or
-`?desired_node=<uuid>`). Other models such as `DesiredService` and `DesiredServicePlacement` are not yet exposed through
-the REST API and remain GraphQL-read/UI/ORM-managed for now.
+filter with the same fields exposed by `DesiredNodeFilterSet`,
+`DesiredEndpointFilterSet`, and `DesiredServiceFilterSet` (for example
+`?slug=agstudio` or `?desired_node=<uuid>`). This is also the write path `nctl dashboard` uses to
+PATCH `reconciliation_status`/`reconciliation_checked_at` (see below). Other models such as
+`DesiredServicePlacement` are not yet exposed through the REST API and remain
+GraphQL-read/UI/ORM-managed for now.
+
+## Reconciliation status fields and the dashboard link
+
+`DesiredNode` and `DesiredService` each carry `reconciliation_status` (blank until first written;
+otherwise one of `converged`/`drifting`/`converging`/`unknown`, matching `nctl.drift.v1`'s status
+vocabulary exactly) and `reconciliation_checked_at` (null until first written). **Both fields are
+a derived cache of the last `nctl dashboard` run** — nintent never computes them itself, and they
+are read-only everywhere in the UI (a "Reconciliation" table column plus detail-page rows); the
+single source of truth remains `nctl drift`. They are written by `nctl dashboard`'s status
+write-back step via the REST routes above (`PATCH reconciliation_status` +
+`reconciliation_checked_at`), which degrades to a warning per target rather than failing when
+Nautobot is unreachable or a target has no matching row — a stale or blank value is expected
+between `nctl dashboard` runs, and `reconciliation_checked_at` is what makes that staleness
+visible.
+
+The plugin setting `PLUGINS_CONFIG["nautobot_intent_catalog"]["dashboard_url"]` (default `None`)
+points at wherever `nctl dashboard`'s output directory (`[dashboard].out_dir` in `nctl.toml`) is
+served on the LAN. When set, it drives a "nctl Dashboard" navigation menu item and a
+"(view dashboard)" link next to each node/service's reconciliation status row — both routed
+through a resolvable Nautobot view (`dashboard_redirect`) that 302s to the configured URL, since
+Nautobot's nav-menu link mechanism expects a Nautobot URL name, not an arbitrary external string.
+It is deployment configuration, not a model field — per the roadmap, Nautobot stays the ledger
+and visualization lives outside it.
 
 ## Reconciliation and IPAM boundary
 
