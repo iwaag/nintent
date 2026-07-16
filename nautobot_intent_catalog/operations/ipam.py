@@ -9,6 +9,7 @@ from typing import Any, Iterable
 
 DHCP_RESERVED_POLICY = "dhcp_reserved"
 DHCP_TYPE_VALUES = frozenset({"dhcp", "dhcp_reserved"})
+IPAM_SUMMARY_SCHEMA_VERSION = "nctl.ipam.reconcile.summary.v1"
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,36 @@ def plan_endpoint_ipam_reconcile(
             ip_address_model=ip_address_model,
         ),
     )
+
+
+def build_ipam_reconcile_summary(
+    counts: dict[str, Any],
+    plans: list[dict[str, Any]],
+    *,
+    requested_desired_node_slug: str | None,
+    selected_desired_node_ids: Iterable[str] = (),
+    selected_desired_node_slugs: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Return the versioned `ipam-reconcile-summary.json` payload (nctl Phase 4 Step 6).
+
+    `requested_desired_node_slug` is the Job's `desired_node` input verbatim
+    (`None`/empty means cluster scope, unchanged from before this version).
+    `selected_desired_node_ids`/`selected_desired_node_slugs` are the actual
+    DesiredNode rows the processed endpoints belong to, letting a caller like
+    nctl's host-scoped `reconcile_ipam` action verify the Job really stayed
+    within the one node it asked for rather than trusting the request alone.
+    """
+
+    return {
+        "schema_version": IPAM_SUMMARY_SCHEMA_VERSION,
+        "scope": {
+            "requested_desired_node_slug": requested_desired_node_slug or None,
+            "selected_desired_node_ids": sorted(str(value) for value in selected_desired_node_ids),
+            "selected_desired_node_slugs": sorted(str(value) for value in selected_desired_node_slugs),
+        },
+        "summary": counts,
+        "plans": plans,
+    }
 
 
 def ip_address_create_fields(

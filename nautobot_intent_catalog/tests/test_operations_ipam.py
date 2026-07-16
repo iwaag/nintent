@@ -3,7 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-from nautobot_intent_catalog.operations.ipam import ip_address_create_fields, plan_endpoint_ipam_reconcile
+from nautobot_intent_catalog.operations.ipam import (
+    IPAM_SUMMARY_SCHEMA_VERSION,
+    build_ipam_reconcile_summary,
+    ip_address_create_fields,
+    plan_endpoint_ipam_reconcile,
+)
 
 
 def obj(**kwargs):
@@ -154,6 +159,54 @@ class IPAMReconcilePlanningTests(unittest.TestCase):
 
         self.assertEqual(fields["address"], "192.0.2.10/32")
         self.assertEqual(fields["dns_name"], "edge-1.example.test")
+
+
+class BuildIpamReconcileSummaryTests(unittest.TestCase):
+    """Phase 4 Step 6: the versioned summary nctl's `reconcile_ipam` action verifies."""
+
+    def test_schema_version_is_stamped(self) -> None:
+        payload = build_ipam_reconcile_summary({}, [], requested_desired_node_slug=None)
+
+        self.assertEqual(payload["schema_version"], IPAM_SUMMARY_SCHEMA_VERSION)
+
+    def test_cluster_scope_has_no_requested_slug(self) -> None:
+        payload = build_ipam_reconcile_summary(
+            {"endpoints": 2},
+            [],
+            requested_desired_node_slug="",
+            selected_desired_node_ids=["n1", "n2"],
+            selected_desired_node_slugs=["agdb", "agweb"],
+        )
+
+        self.assertIsNone(payload["scope"]["requested_desired_node_slug"])
+        self.assertEqual(payload["scope"]["selected_desired_node_slugs"], ["agdb", "agweb"])
+
+    def test_host_scope_records_the_requested_and_selected_node(self) -> None:
+        payload = build_ipam_reconcile_summary(
+            {"endpoints": 1},
+            [{"action": "noop"}],
+            requested_desired_node_slug="agweb",
+            selected_desired_node_ids=["n1"],
+            selected_desired_node_slugs=["agweb"],
+        )
+
+        self.assertEqual(payload["scope"]["requested_desired_node_slug"], "agweb")
+        self.assertEqual(payload["scope"]["selected_desired_node_ids"], ["n1"])
+        self.assertEqual(payload["scope"]["selected_desired_node_slugs"], ["agweb"])
+        self.assertEqual(payload["summary"], {"endpoints": 1})
+        self.assertEqual(payload["plans"], [{"action": "noop"}])
+
+    def test_selected_node_fields_are_sorted_regardless_of_input_order(self) -> None:
+        payload = build_ipam_reconcile_summary(
+            {},
+            [],
+            requested_desired_node_slug=None,
+            selected_desired_node_ids=["n2", "n1"],
+            selected_desired_node_slugs=["agweb", "agdb"],
+        )
+
+        self.assertEqual(payload["scope"]["selected_desired_node_ids"], ["n1", "n2"])
+        self.assertEqual(payload["scope"]["selected_desired_node_slugs"], ["agdb", "agweb"])
 
 
 if __name__ == "__main__":

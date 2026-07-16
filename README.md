@@ -307,8 +307,13 @@ evaluation is computed fresh by nctl comparators instead of stored as a second, 
 truth.
 
 `Reconcile Desired IPAM Intent` remains because it is a transactional ledger write. It defaults to
-dry-run and writes `ipam-reconcile-summary.json`; with `commit_changes` it may create or link a
-non-conflicting `IPAddress`. It no longer upserts evaluation rows as a side effect.
+dry-run and writes a versioned `ipam-reconcile-summary.json` (`nctl.ipam.reconcile.summary.v1`,
+Phase 4 Step 6); with `commit_changes` it may create or link a non-conflicting `IPAddress`. It no
+longer upserts evaluation rows as a side effect. An optional `desired_node` slug scopes it to one
+node's endpoints instead of the whole cluster (`nctl reconcile [HOST]`'s host-scoped IPAM action);
+the summary's `scope` records both the requested slug and the DesiredNode ids/slugs actually
+touched, so a caller can verify the Job stayed in scope rather than trusting the request alone.
+Cluster scope (no `desired_node`) is unchanged from before this version.
 
 Stable integration boundaries are:
 

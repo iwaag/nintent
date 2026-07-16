@@ -46,7 +46,7 @@ try:
         DesiredServicePlacement,
         IntentSource,
     )
-    from .operations import plan_endpoint_ipam_reconcile
+    from .operations import build_ipam_reconcile_summary, plan_endpoint_ipam_reconcile
 except ImportError:  # pragma: no cover - Nautobot is not available in local unit tests.
     if importlib.util.find_spec("nautobot") is not None:
         raise
@@ -259,13 +259,22 @@ else:
             default=False,
             description="Include endpoints attached to deprecated and retired DesiredNode rows.",
         )
+        desired_node = StringVar(
+            required=False,
+            default="",
+            description=(
+                "Optional DesiredNode slug. Scopes reconciliation to that node's endpoints only "
+                "(Phase 4 host-scoped reconcile); empty keeps the existing cluster-wide behavior."
+            ),
+        )
 
         class Meta:
             name = "Reconcile Desired IPAM Intent"
             description = "Dry-run or apply DesiredEndpoint DHCP-reserved IP intent to Nautobot IPAddress rows."
             has_sensitive_variables = False
 
-        def run(self, commit_changes: bool, include_inactive: bool) -> None:
+        def run(self, commit_changes: bool, include_inactive: bool, desired_node: str = "") -> None:
+            requested_desired_node_slug = (desired_node or "").strip()
             endpoints = DesiredEndpoint.objects.select_related(
                 "desired_node",
                 "desired_node__realized_device",
@@ -274,6 +283,14 @@ else:
             ).filter(ip_policy="dhcp_reserved").order_by("desired_node__slug", "endpoint_type", "name")
             if not include_inactive:
                 endpoints = endpoints.exclude(desired_node__lifecycle__in=("deprecated", "retired"))
+            if requested_desired_node_slug:
+                matching_nodes = list(DesiredNode.objects.filter(slug=requested_desired_node_slug))
+                if len(matching_nodes) != 1:
+                    raise ValueError(
+                        f"expected exactly one DesiredNode with slug {requested_desired_node_slug!r}, "
+                        f"found {len(matching_nodes)}"
+                    )
+                endpoints = endpoints.filter(desired_node__slug=requested_desired_node_slug)
 
             ip_candidates = list(IPAddress.objects.all().order_by("host", "mask_length"))
             counts = {
@@ -288,9 +305,13 @@ else:
                 "conflicts": 0,
             }
             plans = []
+            selected_node_ids: set[str] = set()
+            selected_node_slugs: set[str] = set()
 
             for desired_endpoint in endpoints:
                 counts["endpoints"] += 1
+                selected_node_ids.add(str(desired_endpoint.desired_node_id))
+                selected_node_slugs.add(desired_endpoint.desired_node.slug)
                 plan = plan_endpoint_ipam_reconcile(
                     desired_endpoint,
                     ip_candidates=ip_candidates,
@@ -309,9 +330,16 @@ else:
                 self.logger.info("IPAM reconcile action: %s", _json(plan_data))
                 _count_ipam_reconcile_action(counts, applied_plan.action)
 
+            summary_payload = build_ipam_reconcile_summary(
+                counts,
+                plans,
+                requested_desired_node_slug=requested_desired_node_slug,
+                selected_desired_node_ids=selected_node_ids,
+                selected_desired_node_slugs=selected_node_slugs,
+            )
             self.create_file(
                 "ipam-reconcile-summary.json",
-                json.dumps({"summary": counts, "plans": plans}, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
+                json.dumps(summary_payload, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
             )
             self.logger.info("Desired IPAM reconcile summary: %s", _json(counts))
 
