@@ -200,7 +200,13 @@ def ip_address_create_fields(
         fields["type"] = dhcp_value
 
     if default_status is not None and "status" in field_names:
-        fields["status"] = default_status
+        status_pk = getattr(default_status, "pk", None)
+        if status_pk is not None:
+            # Store the pk, not the model instance: create_fields is logged/serialized
+            # as JSON (see jobs.py's _json helper) before being applied to the model.
+            fields["status_id"] = str(status_pk)
+        else:
+            fields["status"] = default_status
 
     return fields
 

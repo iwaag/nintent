@@ -171,6 +171,18 @@ class IPAMReconcilePlanningTests(unittest.TestCase):
 
         self.assertEqual(fields["status"], "reserved-status-id")
 
+    def test_default_status_object_is_stored_as_status_id(self) -> None:
+        status = obj(pk="11111111-1111-1111-1111-111111111111", name="Reserved")
+
+        fields = ip_address_create_fields(
+            "192.0.2.10",
+            ip_address_model=FakeIPAddressModel,
+            default_status=status,
+        )
+
+        self.assertEqual(fields["status_id"], "11111111-1111-1111-1111-111111111111")
+        self.assertNotIn("status", fields)
+
     def test_default_status_omitted_when_not_provided(self) -> None:
         fields = ip_address_create_fields(
             "192.0.2.10",
