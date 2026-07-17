@@ -369,15 +369,20 @@ def _default_ip_address_status(ip_address_model):
 
     IPAddress.status has no model-level default, so a plain `dhcp_reserved`
     endpoint create would otherwise always fail `full_clean()` with a required-field
-    error. Prefer "Active"; fall back to any Status assigned to the IPAddress content
-    type (for example "Reserved", which matches the dhcp_reserved intent policy this
-    Job already restricts itself to).
+    error. Prefer "Active", then "Reserved" (matches the dhcp_reserved intent policy
+    this Job already restricts itself to) before falling back to an arbitrary Status
+    assigned to the IPAddress content type -- an alphabetical fallback could otherwise
+    land on something like "Deprecated" for a freshly created address.
     """
 
     from nautobot.extras.models import Status
 
     statuses = Status.objects.get_for_model(ip_address_model)
-    return statuses.filter(name="Active").first() or statuses.order_by("name").first()
+    for name in ("Active", "Reserved"):
+        found = statuses.filter(name=name).first()
+        if found is not None:
+            return found
+    return statuses.order_by("name").first()
 
 
 def _apply_ipam_reconcile_plan(plan, desired_endpoint, ip_address_model):
