@@ -44,6 +44,7 @@ def plan_endpoint_ipam_reconcile(
     *,
     ip_candidates: Iterable[Any] = (),
     ip_address_model: Any | None = None,
+    default_status: Any | None = None,
 ) -> IPAMReconcilePlan:
     """Return a side-effect-free IPAM reconcile plan for one DesiredEndpoint."""
 
@@ -133,6 +134,7 @@ def plan_endpoint_ipam_reconcile(
             desired_ip,
             dns_name=dns_name,
             ip_address_model=ip_address_model,
+            default_status=default_status,
         ),
     )
 
@@ -172,6 +174,7 @@ def ip_address_create_fields(
     *,
     dns_name: str = "",
     ip_address_model: Any | None = None,
+    default_status: Any | None = None,
 ) -> dict[str, Any]:
     """Return IPAddress constructor fields supported by the target model."""
 
@@ -195,6 +198,9 @@ def ip_address_create_fields(
     dhcp_value = _dhcp_type_choice(ip_address_model)
     if dhcp_value and "type" in field_names:
         fields["type"] = dhcp_value
+
+    if default_status is not None and "status" in field_names:
+        fields["status"] = default_status
 
     return fields
 

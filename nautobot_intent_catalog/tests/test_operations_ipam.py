@@ -73,6 +73,7 @@ class FakeIPAddressModel:
             FakeField("mask_length"),
             FakeField("dns_name"),
             FakeField("type", choices=(("dhcp", "DHCP"), ("host", "Host"))),
+            FakeField("status"),
         ]
     )
 
@@ -159,6 +160,35 @@ class IPAMReconcilePlanningTests(unittest.TestCase):
 
         self.assertEqual(fields["address"], "192.0.2.10/32")
         self.assertEqual(fields["dns_name"], "edge-1.example.test")
+
+    def test_default_status_is_included_when_model_supports_it(self) -> None:
+        fields = ip_address_create_fields(
+            "192.0.2.10",
+            dns_name="edge-1.example.test",
+            ip_address_model=FakeIPAddressModel,
+            default_status="reserved-status-id",
+        )
+
+        self.assertEqual(fields["status"], "reserved-status-id")
+
+    def test_default_status_omitted_when_not_provided(self) -> None:
+        fields = ip_address_create_fields(
+            "192.0.2.10",
+            ip_address_model=FakeIPAddressModel,
+        )
+
+        self.assertNotIn("status", fields)
+
+    def test_create_ip_address_plan_threads_default_status(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+            default_status="reserved-status-id",
+        )
+
+        self.assertEqual(plan.action, "create_ip_address")
+        self.assertEqual(plan.create_fields["status"], "reserved-status-id")
 
 
 class BuildIpamReconcileSummaryTests(unittest.TestCase):

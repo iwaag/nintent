@@ -293,6 +293,7 @@ else:
                 endpoints = endpoints.filter(desired_node__slug=requested_desired_node_slug)
 
             ip_candidates = list(IPAddress.objects.all().order_by("host", "mask_length"))
+            default_status = _default_ip_address_status(IPAddress)
             counts = {
                 "commit_changes": bool(commit_changes),
                 "endpoints": 0,
@@ -316,6 +317,7 @@ else:
                     desired_endpoint,
                     ip_candidates=ip_candidates,
                     ip_address_model=IPAddress,
+                    default_status=default_status,
                 )
                 applied_plan = plan
                 if commit_changes and plan.action in {"create_ip_address", "link_ip_address"}:
@@ -360,6 +362,22 @@ def _configured_source_file():
 
 def _json(value) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True)
+
+
+def _default_ip_address_status(ip_address_model):
+    """Return a Status row usable for a newly created IPAddress, if any is configured.
+
+    IPAddress.status has no model-level default, so a plain `dhcp_reserved`
+    endpoint create would otherwise always fail `full_clean()` with a required-field
+    error. Prefer "Active"; fall back to any Status assigned to the IPAddress content
+    type (for example "Reserved", which matches the dhcp_reserved intent policy this
+    Job already restricts itself to).
+    """
+
+    from nautobot.extras.models import Status
+
+    statuses = Status.objects.get_for_model(ip_address_model)
+    return statuses.filter(name="Active").first() or statuses.order_by("name").first()
 
 
 def _apply_ipam_reconcile_plan(plan, desired_endpoint, ip_address_model):
