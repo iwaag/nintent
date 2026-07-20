@@ -94,7 +94,10 @@ desired_nodes:
     node_type: virtual_machine
     accepted_actual_types:
       - virtual_machine
-    lifecycle: approved
+    # lifecycle omitted -> defaults to active; the node is in production scope
+    # as soon as it's created (Better Usability Phase 3). Set an explicit
+    # `lifecycle: planned` only for deliberate staging, and promote later
+    # with `nctl lifecycle edge-router-1 active`.
     role: edge
     intent_source: service
     expected_spec:
@@ -149,7 +152,7 @@ desired_nodes:
     node_type: device
     accepted_actual_types:
       - device
-    lifecycle: active
+    # lifecycle omitted -> defaults to active.
 
   - name: dnsmasq-main
     slug: dnsmasq-main
@@ -158,7 +161,6 @@ desired_nodes:
       - device
       - virtual_machine
       - container
-    lifecycle: active
     role: dnsmasq
 
 desired_endpoints:
