@@ -227,28 +227,26 @@
                 <div class="panel panel-default"><div class="panel-body">No desired service placements are registered.</div></div>
             {% endif %}
 
-            <h2>Desired Node Operational Configs</h2>
-            {% if desired_node_operational_configs %}
+            <h2>Desired Node Operational Overrides</h2>
+            {% if desired_node_operational_overrides %}
                 <div class="table-responsive">
                     <table class="table table-hover table-headings">
-                        <thead><tr><th>Node</th><th>Actual Policy</th><th>Expected OS</th><th>Declared OS</th><th>Connection</th><th>Power</th><th>Laptop</th></tr></thead>
+                        <thead><tr><th>Node</th><th>Declared OS</th><th>Connection</th><th>Power</th><th>Laptop</th></tr></thead>
                         <tbody>
-                            {% for config in desired_node_operational_configs %}
+                            {% for override in desired_node_operational_overrides %}
                                 <tr>
-                                    <td><code>{{ config.desired_node }}</code></td>
-                                    <td>{{ config.actual_state_policy }}</td>
-                                    <td>{{ config.expected_host_os|default:"-" }}</td>
-                                    <td>{{ config.declared_host_os|default:"-" }}</td>
-                                    <td>{{ config.connection_path }}</td>
-                                    <td>{{ config.power_control }}</td>
-                                    <td>{{ config.is_laptop|yesno:"Yes,No" }}</td>
+                                    <td><code>{{ override.desired_node }}</code></td>
+                                    <td>{{ override.declared_host_os|default:"-" }}</td>
+                                    <td>{{ override.connection_path|default:"derived" }}</td>
+                                    <td>{{ override.power_control|default:"none (default)" }}</td>
+                                    <td>{{ override.is_laptop|yesno:"Yes,No,-" }}</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             {% else %}
-                <div class="panel panel-default"><div class="panel-body">No desired node operational configs are registered.</div></div>
+                <div class="panel panel-default"><div class="panel-body">No desired node operational overrides are registered.</div></div>
             {% endif %}
         </div>
     </div>

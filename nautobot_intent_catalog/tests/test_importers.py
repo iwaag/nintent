@@ -11,8 +11,8 @@ from nautobot_intent_catalog.importers import (
     desired_ip_range_identity,
     desired_node_defaults,
     desired_node_identity,
-    desired_node_operational_config_defaults,
-    desired_node_operational_config_identity,
+    desired_node_operational_override_defaults,
+    desired_node_operational_override_identity,
     desired_service_defaults,
     desired_service_dependencies,
     desired_service_entry_defaults,
@@ -26,7 +26,7 @@ from nautobot_intent_catalog.loaders import (
     DesiredEndpointEntry,
     DesiredIPRangeEntry,
     DesiredNodeEntry,
-    DesiredNodeOperationalConfigEntry,
+    DesiredNodeOperationalOverrideEntry,
     DesiredServiceEntry,
     DesiredServicePlacementEntry,
     IntentSourceEntry,
@@ -182,7 +182,9 @@ class ImporterTests(unittest.TestCase):
             {
                 "ip_address": "192.0.2.10/32",
                 "dns_name": "edge-router-1.example.test",
+                "dns_name_source": "intent",
                 "mdns_name": None,
+                "mdns_name_source": None,
                 "vpn_dns_name": None,
                 "protocol": "https",
                 "port": 443,
@@ -219,7 +221,9 @@ class ImporterTests(unittest.TestCase):
             {
                 "ip_address": None,
                 "dns_name": "pc1.home.arpa",
+                "dns_name_source": "derived",
                 "mdns_name": "pc1.local",
+                "mdns_name_source": "derived",
                 "vpn_dns_name": None,
                 "protocol": None,
                 "port": None,
@@ -326,11 +330,9 @@ class ImporterTests(unittest.TestCase):
         )
         self.assertNotIn("placements", desired_service_defaults({"name": "dnsmasq"}))
 
-    def test_operational_config_identity_and_defaults(self) -> None:
-        operational = DesiredNodeOperationalConfigEntry(
+    def test_operational_override_identity_and_defaults(self) -> None:
+        operational = DesiredNodeOperationalOverrideEntry(
             desired_node="agmac01",
-            actual_state_policy="required",
-            expected_host_os="macos",
             declared_host_os=None,
             connection_path="local",
             local_endpoint=None,
@@ -341,14 +343,12 @@ class ImporterTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            desired_node_operational_config_identity(operational, "node-id"),
+            desired_node_operational_override_identity(operational, "node-id"),
             {"desired_node_id": "node-id"},
         )
         self.assertEqual(
-            desired_node_operational_config_defaults(operational, None, None),
+            desired_node_operational_override_defaults(operational, None, None),
             {
-                "actual_state_policy": "required",
-                "expected_host_os": "macos",
                 "declared_host_os": None,
                 "connection_path": "local",
                 "local_endpoint_id": None,

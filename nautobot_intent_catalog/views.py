@@ -17,7 +17,7 @@ try:
         DesiredEndpointFilterSet,
         DesiredIPRangeFilterSet,
         DesiredNodeFilterSet,
-        DesiredNodeOperationalConfigFilterSet,
+        DesiredNodeOperationalOverrideFilterSet,
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
         IntentSourceFilterSet,
@@ -28,7 +28,7 @@ try:
         DesiredHostQuickAddForm,
         DesiredIPRangeForm,
         DesiredNodeForm,
-        DesiredNodeOperationalConfigForm,
+        DesiredNodeOperationalOverrideForm,
         DesiredServiceForm,
         DesiredServicePlacementForm,
         IntentSourceForm,
@@ -38,7 +38,7 @@ try:
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
-        DesiredNodeOperationalConfig,
+        DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
         IntentSource,
@@ -51,7 +51,7 @@ try:
         DesiredEndpointTable,
         DesiredIPRangeTable,
         DesiredNodeTable,
-        DesiredNodeOperationalConfigTable,
+        DesiredNodeOperationalOverrideTable,
         DesiredServiceTable,
         DesiredServicePlacementTable,
         IntentSourceTable,
@@ -261,39 +261,39 @@ else:
         queryset = DesiredServicePlacement.objects.all()
 
 
-    class DesiredNodeOperationalConfigListView(ObjectListView):
-        """List desired node operational policies."""
+    class DesiredNodeOperationalOverrideListView(ObjectListView):
+        """List desired node operational overrides."""
 
-        queryset = DesiredNodeOperationalConfig.objects.select_related(
+        queryset = DesiredNodeOperationalOverride.objects.select_related(
             "desired_node",
             "local_endpoint",
             "tailscale_endpoint",
         )
-        filterset = DesiredNodeOperationalConfigFilterSet
-        table = DesiredNodeOperationalConfigTable
+        filterset = DesiredNodeOperationalOverrideFilterSet
+        table = DesiredNodeOperationalOverrideTable
 
 
-    class DesiredNodeOperationalConfigView(ObjectView):
-        """Show one desired node operational policy."""
+    class DesiredNodeOperationalOverrideView(ObjectView):
+        """Show one desired node operational override."""
 
-        queryset = DesiredNodeOperationalConfig.objects.select_related(
+        queryset = DesiredNodeOperationalOverride.objects.select_related(
             "desired_node",
             "local_endpoint",
             "tailscale_endpoint",
         )
 
 
-    class DesiredNodeOperationalConfigEditView(ObjectEditView):
-        """Create or edit desired node operational policy."""
+    class DesiredNodeOperationalOverrideEditView(ObjectEditView):
+        """Create or edit a desired node operational override."""
 
-        queryset = DesiredNodeOperationalConfig.objects.all()
-        model_form = DesiredNodeOperationalConfigForm
+        queryset = DesiredNodeOperationalOverride.objects.all()
+        model_form = DesiredNodeOperationalOverrideForm
 
 
-    class DesiredNodeOperationalConfigDeleteView(ObjectDeleteView):
-        """Delete desired node operational policy."""
+    class DesiredNodeOperationalOverrideDeleteView(ObjectDeleteView):
+        """Delete a desired node operational override."""
 
-        queryset = DesiredNodeOperationalConfig.objects.all()
+        queryset = DesiredNodeOperationalOverride.objects.all()
 
 
     class DesiredIPRangeListView(ObjectListView):
@@ -350,7 +350,7 @@ def source_yaml_intent_source_list(request):
             "desired_ip_ranges": result.desired_ip_ranges,
             "desired_endpoints": result.desired_endpoints,
             "desired_service_placements": result.desired_service_placements,
-            "desired_node_operational_configs": result.desired_node_operational_configs,
+            "desired_node_operational_overrides": result.desired_node_operational_overrides,
             "errors": result.errors,
         },
     )

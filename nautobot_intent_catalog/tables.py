@@ -12,7 +12,7 @@ try:
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
-        DesiredNodeOperationalConfig,
+        DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
         IntentSource,
@@ -271,21 +271,19 @@ else:
             default_columns = fields
 
 
-    class DesiredNodeOperationalConfigTable(BaseTable):
-        """Desired node operational policy list table."""
+    class DesiredNodeOperationalOverrideTable(BaseTable):
+        """Desired node operational override list table."""
 
         pk = ToggleColumn()
         desired_node = tables.LinkColumn()
-        actual_state_policy = tables.LinkColumn()
-        actions = ButtonsColumn(DesiredNodeOperationalConfig, buttons=TABLE_ACTION_BUTTONS)
+        declared_host_os = tables.LinkColumn()
+        actions = ButtonsColumn(DesiredNodeOperationalOverride, buttons=TABLE_ACTION_BUTTONS)
 
         class Meta(BaseTable.Meta):
-            model = DesiredNodeOperationalConfig
+            model = DesiredNodeOperationalOverride
             fields = (
                 "pk",
                 "desired_node",
-                "actual_state_policy",
-                "expected_host_os",
                 "declared_host_os",
                 "connection_path",
                 "ansible_port",

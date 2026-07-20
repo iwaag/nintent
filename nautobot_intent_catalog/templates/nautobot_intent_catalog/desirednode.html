@@ -41,11 +41,11 @@
                     </tr>
                     <tr>
                         <th scope="row">Realized Device</th>
-                        <td>{{ object.realized_device|default:"-" }}</td>
+                        <td>{{ object.realized_device|default:"-" }} ({{ object.realized_device_source|default:"no source" }})</td>
                     </tr>
                     <tr>
                         <th scope="row">Realized VM</th>
-                        <td>{{ object.realized_vm|default:"-" }}</td>
+                        <td>{{ object.realized_vm|default:"-" }} ({{ object.realized_vm_source|default:"no source" }})</td>
                     </tr>
                     <tr>
                         <th scope="row">Description</th>
@@ -68,12 +68,12 @@
             </div>
 
             <div class="panel panel-default">
-                <div class="panel-heading"><strong>Operational Config</strong></div>
+                <div class="panel-heading"><strong>Operational Override</strong></div>
                 <div class="panel-body">
-                    {% if object.operational_config %}
-                        <a href="{{ object.operational_config.get_absolute_url }}">{{ object.operational_config }}</a>
+                    {% if object.operational_override %}
+                        <a href="{{ object.operational_override.get_absolute_url }}">{{ object.operational_override }}</a>
                     {% else %}
-                        No operational config is registered.
+                        Common operational values are derived. <a href="{% url 'plugins:nautobot_intent_catalog:desirednodeoperationaloverride_add' %}?desired_node={{ object.pk }}">Add an exception</a> only when needed.
                     {% endif %}
                 </div>
             </div>

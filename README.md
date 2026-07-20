@@ -71,8 +71,9 @@ operator commands, see [README_QUICK.md](README_QUICK.md).
 
 The loader accepts the current `intent_sources`, `desired_nodes`,
 `desired_endpoints`, `desired_ip_ranges`, `desired_service_placements`, and
-`desired_node_operational_configs` roots. It does not load renamed or legacy
-placement and operational-policy shapes.
+`desired_node_operational_overrides` roots. The removed
+`desired_node_operational_configs` root is rejected; ordinary OS, policy, path, and endpoint
+selection are derived by nctl rather than imported.
 
 ```yaml
 intent_sources:
@@ -131,17 +132,10 @@ desired_service_placements:
     config:
       dhcp_authoritative: true
 
-desired_node_operational_configs:
+desired_node_operational_overrides:
   - desired_node: edge-router-1
-    actual_state_policy: required
-    expected_host_os: linux
-    connection_path: local
-    local_endpoint:
-      name: mgmt
-      endpoint_type: management
-    ansible_port: 22
+    ansible_port: 2222
     power_control: wol
-    is_laptop: false
 ```
 
 For the common one-host/one-primary-endpoint case, YAML may omit `dns_name` and

@@ -323,12 +323,26 @@ else:
             null=True,
             related_name="intent_catalog_desired_nodes",
         )
+        realized_device_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("override", "Override")),
+            blank=True,
+            null=True,
+            editable=False,
+        )
         realized_vm = models.ForeignKey(
             "virtualization.VirtualMachine",
             on_delete=models.SET_NULL,
             blank=True,
             null=True,
             related_name="intent_catalog_desired_nodes",
+        )
+        realized_vm_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("override", "Override")),
+            blank=True,
+            null=True,
+            editable=False,
         )
         notes = models.TextField(blank=True, null=True)
 
@@ -395,6 +409,17 @@ else:
                     }
                 )
 
+            source_errors = {}
+            for relation_name in ("realized_device", "realized_vm"):
+                relation_id = getattr(self, f"{relation_name}_id")
+                source = getattr(self, f"{relation_name}_source")
+                if bool(relation_id) != bool(source):
+                    source_errors[f"{relation_name}_source"] = (
+                        f"{relation_name}_source must be set exactly when {relation_name} is set."
+                    )
+            if source_errors:
+                raise ValidationError(source_errors)
+
 
     @extras_features("graphql")
     class DesiredEndpoint(PrimaryModel):
@@ -451,7 +476,21 @@ else:
             default=IP_POLICY_STATIC,
         )
         dns_name = models.CharField(max_length=255, blank=True, null=True)
+        dns_name_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("intent", "Intent")),
+            blank=True,
+            null=True,
+            editable=False,
+        )
         mdns_name = models.CharField(max_length=255, blank=True, null=True)
+        mdns_name_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("intent", "Intent")),
+            blank=True,
+            null=True,
+            editable=False,
+        )
         vpn_dns_name = models.CharField(max_length=255, blank=True, null=True)
         protocol = models.CharField(max_length=64, blank=True, null=True)
         port = models.PositiveIntegerField(blank=True, null=True)
@@ -467,6 +506,13 @@ else:
             blank=True,
             null=True,
             related_name="intent_catalog_desired_endpoints",
+        )
+        realized_ip_address_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("override", "Override")),
+            blank=True,
+            null=True,
+            editable=False,
         )
         description = models.TextField(blank=True, null=True)
 
@@ -486,6 +532,23 @@ else:
 
         def get_absolute_url(self) -> str:
             return reverse("plugins:nautobot_intent_catalog:desiredendpoint", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            for value_name in ("dns_name", "mdns_name", "realized_ip_address"):
+                value = (
+                    getattr(self, "realized_ip_address_id")
+                    if value_name == "realized_ip_address"
+                    else getattr(self, value_name)
+                )
+                source = getattr(self, f"{value_name}_source")
+                if bool(value) != bool(source):
+                    errors[f"{value_name}_source"] = (
+                        f"{value_name}_source must be set exactly when {value_name} is set."
+                    )
+            if errors:
+                raise ValidationError(errors)
 
 
     @extras_features("graphql")
@@ -602,22 +665,8 @@ else:
 
 
     @extras_features("graphql")
-    class DesiredNodeOperationalConfig(PrimaryModel):
-        """Explicit non-service execution policy for one desired node."""
-
-        ACTUAL_REQUIRED = "required"
-        ACTUAL_DECLARED = "declared"
-        ACTUAL_STATE_POLICY_CHOICES = (
-            (ACTUAL_REQUIRED, "Required"),
-            (ACTUAL_DECLARED, "Declared"),
-        )
-
-        HOST_OS_LINUX = "linux"
-        HOST_OS_MACOS = "macos"
-        EXPECTED_HOST_OS_CHOICES = (
-            (HOST_OS_LINUX, "Linux"),
-            (HOST_OS_MACOS, "macOS"),
-        )
+    class DesiredNodeOperationalOverride(PrimaryModel):
+        """Optional genuine exceptions to nctl's derived node operation values."""
 
         HOST_OS_HAOS = "haos"
         DECLARED_HOST_OS_CHOICES = ((HOST_OS_HAOS, "Home Assistant OS"),)
@@ -641,17 +690,7 @@ else:
         desired_node = models.OneToOneField(
             DesiredNode,
             on_delete=models.PROTECT,
-            related_name="operational_config",
-        )
-        actual_state_policy = models.CharField(
-            max_length=32,
-            choices=ACTUAL_STATE_POLICY_CHOICES,
-        )
-        expected_host_os = models.CharField(
-            max_length=32,
-            choices=EXPECTED_HOST_OS_CHOICES,
-            blank=True,
-            null=True,
+            related_name="operational_override",
         )
         declared_host_os = models.CharField(
             max_length=32,
@@ -662,77 +701,48 @@ else:
         connection_path = models.CharField(
             max_length=32,
             choices=CONNECTION_PATH_CHOICES,
+            blank=True,
+            null=True,
         )
         local_endpoint = models.ForeignKey(
             DesiredEndpoint,
             on_delete=models.PROTECT,
             blank=True,
             null=True,
-            related_name="local_operational_configs",
+            related_name="local_operational_overrides",
         )
         tailscale_endpoint = models.ForeignKey(
             DesiredEndpoint,
             on_delete=models.PROTECT,
             blank=True,
             null=True,
-            related_name="tailscale_operational_configs",
+            related_name="tailscale_operational_overrides",
         )
         ansible_port = models.PositiveIntegerField(blank=True, null=True)
         power_control = models.CharField(
             max_length=32,
             choices=POWER_CONTROL_CHOICES,
-            default=POWER_NONE,
+            blank=True,
+            null=True,
         )
-        is_laptop = models.BooleanField(default=False)
+        is_laptop = models.BooleanField(blank=True, null=True)
 
         class Meta:
             ordering = ("desired_node__name",)
-            verbose_name = "desired node operational config"
-            verbose_name_plural = "desired node operational configs"
-            constraints = (
-                models.CheckConstraint(
-                    check=(
-                        models.Q(
-                            actual_state_policy="required",
-                            expected_host_os__in=("linux", "macos"),
-                            declared_host_os__isnull=True,
-                        )
-                        | models.Q(
-                            actual_state_policy="declared",
-                            expected_host_os__isnull=True,
-                            declared_host_os="haos",
-                        )
-                    ),
-                    name="nic_operational_host_os_policy",
-                ),
-            )
+            verbose_name = "desired node operational override"
+            verbose_name_plural = "desired node operational overrides"
 
         def __str__(self) -> str:
-            return f"{self.desired_node} operational config"
+            return f"{self.desired_node} operational override"
 
         def get_absolute_url(self) -> str:
-            return reverse("plugins:nautobot_intent_catalog:desirednodeoperationalconfig", args=[self.pk])
+            return reverse("plugins:nautobot_intent_catalog:desirednodeoperationaloverride", args=[self.pk])
 
         def clean(self):
-            """Validate policy-dependent fields, endpoint ownership, and safe power policy."""
+            """Validate endpoint ownership and cross-field override consistency."""
 
             super().clean()
             errors = {}
-            if self.actual_state_policy == self.ACTUAL_REQUIRED:
-                if self.expected_host_os not in {self.HOST_OS_LINUX, self.HOST_OS_MACOS}:
-                    errors["expected_host_os"] = "Required actual state needs expected_host_os=linux or macos."
-                if self.declared_host_os is not None:
-                    errors["declared_host_os"] = "Required actual state forbids declared_host_os."
-                platform = self.expected_host_os
-            elif self.actual_state_policy == self.ACTUAL_DECLARED:
-                if self.declared_host_os != self.HOST_OS_HAOS:
-                    errors["declared_host_os"] = "Declared actual state supports only declared_host_os=haos."
-                if self.expected_host_os is not None:
-                    errors["expected_host_os"] = "Declared actual state forbids expected_host_os."
-                platform = self.declared_host_os
-            else:
-                platform = None
-
             for field_name in ("local_endpoint", "tailscale_endpoint"):
                 endpoint_id = getattr(self, f"{field_name}_id")
                 if endpoint_id and self.desired_node_id:
@@ -743,20 +753,35 @@ else:
             if self.connection_path == self.CONNECTION_TAILSCALE:
                 if not self.tailscale_endpoint_id or not _endpoint_has_usable_ip(self.tailscale_endpoint):
                     errors["tailscale_endpoint"] = "Tailscale connection requires an endpoint with a valid IP address."
-            if self.actual_state_policy == self.ACTUAL_DECLARED and self.connection_path == self.CONNECTION_LOCAL:
-                if not self.local_endpoint_id or not _endpoint_is_usable_local(self.local_endpoint):
-                    errors["local_endpoint"] = "Declared local connection requires an endpoint with an IP, DNS, or mDNS address."
+                if self.local_endpoint_id:
+                    errors["local_endpoint"] = "Tailscale connection forbids a local endpoint override."
+            elif self.tailscale_endpoint_id:
+                errors["tailscale_endpoint"] = "A Tailscale endpoint requires connection_path=tailscale."
 
-            allowed_power = {
-                self.HOST_OS_LINUX: {self.POWER_NONE, self.POWER_WOL},
-                self.HOST_OS_MACOS: {self.POWER_NONE, self.POWER_MACOS_SLEEP},
-                self.HOST_OS_HAOS: {self.POWER_NONE},
-            }
-            if platform in allowed_power and self.power_control not in allowed_power[platform]:
-                errors["power_control"] = f"Power control {self.power_control!r} is invalid for {platform}."
+            if self.local_endpoint_id:
+                if self.connection_path not in (None, self.CONNECTION_LOCAL):
+                    errors["connection_path"] = "A local endpoint permits only connection_path=local."
+                if not _endpoint_is_usable_local(self.local_endpoint):
+                    errors["local_endpoint"] = "Local endpoint requires an IP, DNS, or mDNS address."
+
+            if self.declared_host_os == self.HOST_OS_HAOS and self.power_control not in (None, self.POWER_NONE):
+                errors["power_control"] = "HAOS permits only power_control=none."
 
             if self.ansible_port is not None and not 1 <= self.ansible_port <= 65535:
                 errors["ansible_port"] = "Ansible port must be between 1 and 65535."
+            meaningful = any(
+                (
+                    self.declared_host_os,
+                    self.connection_path == self.CONNECTION_TAILSCALE,
+                    self.local_endpoint_id,
+                    self.tailscale_endpoint_id,
+                    self.ansible_port,
+                    self.power_control not in (None, self.POWER_NONE),
+                    self.is_laptop is True,
+                )
+            )
+            if not meaningful:
+                errors["__all__"] = "At least one non-default operational override is required."
             if errors:
                 raise ValidationError(errors)
 

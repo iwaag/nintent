@@ -16,8 +16,8 @@ Intent Catalog separates desired state into a few layers:
 - `DesiredEndpoint`: a desired IP/DNS/port-facing endpoint on a node.
 - `DesiredServicePlacement`: one explicitly desired service instance bound to a
   desired node.
-- `DesiredNodeOperationalConfig`: typed non-service execution policy for one
-  desired node.
+- `DesiredNodeOperationalOverride`: optional genuine exceptions to nctl's
+  derived node operation values.
 - `IntentEvaluation`: persisted desired-vs-actual review data.
 
 The current implementation stores desired state and deterministic exports. It
@@ -266,19 +266,18 @@ contract, used for profile choices and early `config` validation. The projection
 is advisory: production inventory export still revalidates the map and records its
 digest, so an authoritative copy never lives in Nautobot.
 
-## DesiredNodeOperationalConfig
+## DesiredNodeOperationalOverride
 
-`DesiredNodeOperationalConfig` is a one-to-one typed execution policy for a
-desired node. It declares actual-data requirements, expected or declared OS,
-connection selection, explicit endpoints, Ansible port, power policy, and
-laptop classification.
+`DesiredNodeOperationalOverride` is an optional one-to-one exception record.
+Without a row, nctl derives Linux/macOS from fresh nodeutils evidence and selects
+the node's sole usable endpoint, or its unique primary endpoint. A row is used
+only for declared HAOS, a forced local/Tailscale endpoint or path, a non-standard
+Ansible port, power behavior, or laptop behavior. Empty/no-op rows are invalid.
 
-`actual_state_policy=required` accepts only expected Linux or macOS and requires
-nodeutils-backed actual state. `actual_state_policy=declared` accepts only HAOS
-in schema 1.0 and does not permit `expected_host_os`. Tailscale connections need
-a selected endpoint with a valid IP. Declared local connections need a selected
-endpoint with an IP, DNS name, or mDNS name. Platform/power combinations are
-validated when the row is saved and again when production inventory is composed.
+Tailscale is never selected automatically and requires a VPN endpoint with a
+usable IP. A forced local endpoint must belong to the node and have IP, DNS, or
+mDNS. HAOS permits only `power_control=none`; observed Linux/macOS power safety
+is validated by nctl after deriving the platform.
 
 ## IntentEvaluation
 
@@ -325,7 +324,7 @@ These boundaries are intentional in the current implementation:
 - `DesiredDependency` rows are stored, but dependency satisfaction is not yet
   automatically evaluated.
 - `DesiredNode`, `DesiredEndpoint`, `DesiredServicePlacement`, and
-  `DesiredNodeOperationalConfig` can be maintained through strict YAML import
+  `DesiredNodeOperationalOverride` can be maintained through strict YAML import
   or Nautobot CRUD screens.
 - `IntentEvaluation` has CRUD, schema support, and deterministic node,
   endpoint, and service evaluation jobs. Optional AI review is not implemented

@@ -81,6 +81,8 @@ def create_desired_node_with_primary_endpoint(
         "endpoint_name": _required_str(endpoint_name, "endpoint_name"),
         "endpoint_type": _required_str(endpoint_type, "endpoint_type"),
     }
+    dns_name_was_explicit = cleaned["dns_name"] is not None
+    mdns_name_was_explicit = cleaned["mdns_name"] is not None
     if cleaned["endpoint_name"] == "primary" and cleaned["endpoint_type"] == "primary":
         if cleaned["dns_name"] is None:
             cleaned["dns_name"] = default_dns_name(cleaned["name"])
@@ -119,7 +121,9 @@ def create_desired_node_with_primary_endpoint(
                 endpoint_type=cleaned["endpoint_type"],
                 ip_address=cleaned["ip_address"],
                 dns_name=cleaned["dns_name"],
+                dns_name_source=("intent" if dns_name_was_explicit else "derived") if cleaned["dns_name"] else None,
                 mdns_name=cleaned["mdns_name"],
+                mdns_name_source=("intent" if mdns_name_was_explicit else "derived") if cleaned["mdns_name"] else None,
                 vpn_dns_name=cleaned["vpn_dns_name"],
                 protocol=cleaned["protocol"],
                 port=cleaned["port"],

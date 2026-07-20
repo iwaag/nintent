@@ -11,7 +11,7 @@ try:
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
-        DesiredNodeOperationalConfig,
+        DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
         IntentSource,
@@ -177,18 +177,16 @@ else:
             )
 
 
-    class DesiredNodeOperationalConfigFilterSet(NautobotFilterSet):
-        """Filters for desired node execution policy."""
+    class DesiredNodeOperationalOverrideFilterSet(NautobotFilterSet):
+        """Filters for desired node operation exceptions."""
 
         q = django_filters.CharFilter(method="search", label="Search")
 
         class Meta:
-            model = DesiredNodeOperationalConfig
+            model = DesiredNodeOperationalOverride
             fields = (
                 "id",
                 "desired_node",
-                "actual_state_policy",
-                "expected_host_os",
                 "declared_host_os",
                 "connection_path",
                 "local_endpoint",

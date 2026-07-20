@@ -11,7 +11,7 @@ from .loaders import (
     DesiredEndpointEntry,
     DesiredIPRangeEntry,
     DesiredNodeEntry,
-    DesiredNodeOperationalConfigEntry,
+    DesiredNodeOperationalOverrideEntry,
     DesiredServiceEntry,
     DesiredServicePlacementEntry,
     IntentSourceEntry,
@@ -213,6 +213,8 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
 
     dns_name = _optional_str(endpoint.dns_name)
     mdns_name = _optional_str(endpoint.mdns_name)
+    dns_name_was_explicit = dns_name is not None
+    mdns_name_was_explicit = mdns_name is not None
     if desired_node is not None and endpoint.name == "primary" and endpoint.endpoint_type == "primary":
         node_name = getattr(desired_node, "name", None)
         if dns_name is None:
@@ -223,7 +225,9 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
     return {
         "ip_address": endpoint.ip_address,
         "dns_name": dns_name,
+        "dns_name_source": "intent" if dns_name_was_explicit else ("derived" if dns_name else None),
         "mdns_name": mdns_name,
+        "mdns_name_source": "intent" if mdns_name_was_explicit else ("derived" if mdns_name else None),
         "vpn_dns_name": endpoint.vpn_dns_name,
         "protocol": endpoint.protocol,
         "port": endpoint.port,
@@ -287,32 +291,30 @@ def desired_service_placement_defaults(
     }
 
 
-def desired_node_operational_config_identity(
-    operational_config: DesiredNodeOperationalConfigEntry,
+def desired_node_operational_override_identity(
+    operational_override: DesiredNodeOperationalOverrideEntry,
     desired_node_id: Any,
 ) -> dict[str, Any]:
-    """Return the one-to-one identity for desired node operational policy."""
+    """Return the one-to-one identity for a desired node operational override."""
 
     return {"desired_node_id": desired_node_id}
 
 
-def desired_node_operational_config_defaults(
-    operational_config: DesiredNodeOperationalConfigEntry,
+def desired_node_operational_override_defaults(
+    operational_override: DesiredNodeOperationalOverrideEntry,
     local_endpoint_id: Any | None,
     tailscale_endpoint_id: Any | None,
 ) -> dict[str, Any]:
-    """Return explicit typed execution-policy values."""
+    """Return only explicit override values."""
 
     return {
-        "actual_state_policy": operational_config.actual_state_policy,
-        "expected_host_os": operational_config.expected_host_os,
-        "declared_host_os": operational_config.declared_host_os,
-        "connection_path": operational_config.connection_path,
+        "declared_host_os": operational_override.declared_host_os,
+        "connection_path": operational_override.connection_path,
         "local_endpoint_id": local_endpoint_id,
         "tailscale_endpoint_id": tailscale_endpoint_id,
-        "ansible_port": operational_config.ansible_port,
-        "power_control": operational_config.power_control,
-        "is_laptop": operational_config.is_laptop,
+        "ansible_port": operational_override.ansible_port,
+        "power_control": operational_override.power_control,
+        "is_laptop": operational_override.is_laptop,
     }
 
 

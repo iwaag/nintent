@@ -147,19 +147,17 @@ class DesiredServicePlacementEntry:
 
 
 @dataclass(frozen=True)
-class DesiredNodeOperationalConfigEntry:
-    """One desired node execution-policy row normalized from YAML."""
+class DesiredNodeOperationalOverrideEntry:
+    """One optional desired-node operation override normalized from YAML."""
 
     desired_node: str
-    actual_state_policy: str
-    expected_host_os: str | None
     declared_host_os: str | None
-    connection_path: str
+    connection_path: str | None
     local_endpoint: dict[str, str] | None
     tailscale_endpoint: dict[str, str] | None
     ansible_port: int | None
-    power_control: str
-    is_laptop: bool
+    power_control: str | None
+    is_laptop: bool | None
 
 
 @dataclass(frozen=True)
@@ -173,7 +171,7 @@ class IntentSourceLoadResult:
     desired_endpoints: list[DesiredEndpointEntry] = field(default_factory=list)
     desired_services: list[DesiredServiceEntry] = field(default_factory=list)
     desired_service_placements: list[DesiredServicePlacementEntry] = field(default_factory=list)
-    desired_node_operational_configs: list[DesiredNodeOperationalConfigEntry] = field(default_factory=list)
+    desired_node_operational_overrides: list[DesiredNodeOperationalOverrideEntry] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -232,6 +230,14 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
             source_path=source_path,
             errors=["service_repositories is not supported; rename the top-level key to intent_sources."],
         )
+    if "desired_node_operational_configs" in data:
+        return IntentSourceLoadResult(
+            source_path=source_path,
+            errors=[
+                "desired_node_operational_configs is not supported; use "
+                "desired_node_operational_overrides."
+            ],
+        )
 
     intent_sources: list[IntentSourceEntry] = []
     desired_nodes: list[DesiredNodeEntry] = []
@@ -239,7 +245,7 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
     desired_endpoints: list[DesiredEndpointEntry] = []
     desired_services: list[DesiredServiceEntry] = []
     desired_service_placements: list[DesiredServicePlacementEntry] = []
-    desired_node_operational_configs: list[DesiredNodeOperationalConfigEntry] = []
+    desired_node_operational_overrides: list[DesiredNodeOperationalOverrideEntry] = []
     errors: list[str] = []
 
     raw_sources, source_errors = _list_section(data, "intent_sources")
@@ -290,20 +296,20 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
             desired_service_placements.append(entry)
         errors.extend(entry_errors)
 
-    raw_operational_configs, operational_errors = _list_section(
+    raw_operational_overrides, operational_errors = _list_section(
         data,
-        "desired_node_operational_configs",
+        "desired_node_operational_overrides",
     )
     errors.extend(operational_errors)
-    for index, item in enumerate(raw_operational_configs, start=1):
-        entry, entry_errors = _normalize_desired_node_operational_config_entry(item, index)
+    for index, item in enumerate(raw_operational_overrides, start=1):
+        entry, entry_errors = _normalize_desired_node_operational_override_entry(item, index)
         if entry is not None:
-            desired_node_operational_configs.append(entry)
+            desired_node_operational_overrides.append(entry)
         errors.extend(entry_errors)
 
     errors.extend(_duplicate_service_errors(desired_services))
     errors.extend(_duplicate_placement_errors(desired_service_placements))
-    errors.extend(_duplicate_operational_config_errors(desired_node_operational_configs))
+    errors.extend(_duplicate_operational_override_errors(desired_node_operational_overrides))
 
     return IntentSourceLoadResult(
         source_path=source_path,
@@ -313,7 +319,7 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
         desired_endpoints=desired_endpoints,
         desired_services=desired_services,
         desired_service_placements=desired_service_placements,
-        desired_node_operational_configs=desired_node_operational_configs,
+        desired_node_operational_overrides=desired_node_operational_overrides,
         errors=errors,
     )
 
@@ -710,15 +716,13 @@ def _normalize_desired_service_placement_entry(
     )
 
 
-def _normalize_desired_node_operational_config_entry(
+def _normalize_desired_node_operational_override_entry(
     item: Any,
     index: int,
-) -> tuple[DesiredNodeOperationalConfigEntry | None, list[str]]:
-    section = f"desired_node_operational_configs entry {index}"
+) -> tuple[DesiredNodeOperationalOverrideEntry | None, list[str]]:
+    section = f"desired_node_operational_overrides entry {index}"
     allowed = {
         "desired_node",
-        "actual_state_policy",
-        "expected_host_os",
         "declared_host_os",
         "connection_path",
         "local_endpoint",
@@ -727,40 +731,22 @@ def _normalize_desired_node_operational_config_entry(
         "power_control",
         "is_laptop",
     }
-    required = {
-        "desired_node",
-        "actual_state_policy",
-        "connection_path",
-        "power_control",
-        "is_laptop",
-    }
+    required = {"desired_node"}
     errors = _strict_mapping_errors(item, section, allowed, required)
     if errors:
         return None, errors
 
     desired_node = _strict_slug(item.get("desired_node"), f"{section} desired_node", errors)
-    actual_state_policy = _strict_choice(
-        item.get("actual_state_policy"),
-        _ACTUAL_STATE_POLICIES,
-        f"{section} actual_state_policy",
-        errors,
-    )
-    connection_path = _strict_choice(
+    connection_path = _strict_optional_choice(
         item.get("connection_path"),
         _CONNECTION_PATHS,
         f"{section} connection_path",
         errors,
     )
-    power_control = _strict_choice(
+    power_control = _strict_optional_choice(
         item.get("power_control"),
         _POWER_CONTROLS,
         f"{section} power_control",
-        errors,
-    )
-    expected_host_os = _strict_optional_choice(
-        item.get("expected_host_os"),
-        _EXPECTED_HOST_OS,
-        f"{section} expected_host_os",
         errors,
     )
     declared_host_os = _strict_optional_choice(
@@ -779,39 +765,37 @@ def _normalize_desired_node_operational_config_entry(
     )
     ansible_port = _strict_optional_port(item.get("ansible_port"), f"{section} ansible_port", errors)
     is_laptop = item.get("is_laptop")
-    if not isinstance(is_laptop, bool):
+    if is_laptop is not None and not isinstance(is_laptop, bool):
         errors.append(f"{section} is_laptop must be a boolean.")
-        is_laptop = False
-
-    if actual_state_policy == "required":
-        if expected_host_os not in _EXPECTED_HOST_OS:
-            errors.append(f"{section} required policy needs expected_host_os=linux or macos.")
-        if declared_host_os is not None:
-            errors.append(f"{section} required policy forbids declared_host_os.")
-        platform = expected_host_os
-    elif actual_state_policy == "declared":
-        if declared_host_os != "haos":
-            errors.append(f"{section} declared policy needs declared_host_os=haos.")
-        if expected_host_os is not None:
-            errors.append(f"{section} declared policy forbids expected_host_os.")
-        platform = declared_host_os
-    else:
-        platform = None
 
     if connection_path == "tailscale" and tailscale_endpoint is None:
         errors.append(f"{section} tailscale connection requires tailscale_endpoint.")
-    if actual_state_policy == "declared" and connection_path == "local" and local_endpoint is None:
-        errors.append(f"{section} declared local connection requires local_endpoint.")
-    if platform in _POWER_BY_PLATFORM and power_control not in _POWER_BY_PLATFORM[platform]:
-        errors.append(f"{section} power_control {power_control!r} is invalid for {platform}.")
+    if connection_path == "tailscale" and local_endpoint is not None:
+        errors.append(f"{section} tailscale connection forbids local_endpoint.")
+    if tailscale_endpoint is not None and connection_path != "tailscale":
+        errors.append(f"{section} tailscale_endpoint requires connection_path=tailscale.")
+    if local_endpoint is not None and connection_path not in (None, "local"):
+        errors.append(f"{section} local_endpoint permits only connection_path=local.")
+    if declared_host_os == "haos" and power_control not in (None, "none"):
+        errors.append(f"{section} HAOS permits only power_control=none.")
+    if not any(
+        (
+            declared_host_os,
+            connection_path,
+            local_endpoint,
+            tailscale_endpoint,
+            ansible_port,
+            power_control not in (None, "none"),
+            is_laptop is True,
+        )
+    ):
+        errors.append(f"{section} must contain at least one non-default override.")
 
     if errors:
         return None, errors
     return (
-        DesiredNodeOperationalConfigEntry(
+        DesiredNodeOperationalOverrideEntry(
             desired_node=desired_node,
-            actual_state_policy=actual_state_policy,
-            expected_host_os=expected_host_os,
             declared_host_os=declared_host_os,
             connection_path=connection_path,
             local_endpoint=local_endpoint,
@@ -1101,13 +1085,13 @@ def _duplicate_placement_errors(entries: list[DesiredServicePlacementEntry]) -> 
     return errors
 
 
-def _duplicate_operational_config_errors(entries: list[DesiredNodeOperationalConfigEntry]) -> list[str]:
+def _duplicate_operational_override_errors(entries: list[DesiredNodeOperationalOverrideEntry]) -> list[str]:
     seen = set()
     errors = []
     for entry in entries:
         if entry.desired_node in seen:
             errors.append(
-                "desired_node_operational_configs contains duplicate desired_node: "
+                "desired_node_operational_overrides contains duplicate desired_node: "
                 f"{entry.desired_node}."
             )
         seen.add(entry.desired_node)

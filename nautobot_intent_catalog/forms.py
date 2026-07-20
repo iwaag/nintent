@@ -12,7 +12,7 @@ try:
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
-        DesiredNodeOperationalConfig,
+        DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
         IntentSource,
@@ -198,6 +198,17 @@ else:
                 "notes",
             )
 
+        def save(self, commit=True):
+            instance = super().save(commit=False)
+            for relation_name in ("realized_device", "realized_vm"):
+                if relation_name in self.changed_data:
+                    relation_id = getattr(instance, f"{relation_name}_id")
+                    setattr(instance, f"{relation_name}_source", "override" if relation_id else None)
+            if commit:
+                instance.save()
+                self.save_m2m()
+            return instance
+
 
     class DesiredEndpointForm(NautobotModelForm):
         """Edit form for desired endpoints."""
@@ -220,6 +231,20 @@ else:
                 "realized_ip_address",
                 "description",
             )
+
+        def save(self, commit=True):
+            instance = super().save(commit=False)
+            for name_field in ("dns_name", "mdns_name"):
+                if name_field in self.changed_data:
+                    setattr(instance, f"{name_field}_source", "intent" if getattr(instance, name_field) else None)
+            if "realized_ip_address" in self.changed_data:
+                instance.realized_ip_address_source = (
+                    "override" if instance.realized_ip_address_id else None
+                )
+            if commit:
+                instance.save()
+                self.save_m2m()
+            return instance
 
 
     class DesiredServicePlacementForm(NautobotModelForm):
@@ -247,15 +272,13 @@ else:
             )
 
 
-    class DesiredNodeOperationalConfigForm(NautobotModelForm):
-        """Create or edit desired node execution policy."""
+    class DesiredNodeOperationalOverrideForm(NautobotModelForm):
+        """Create or edit optional desired-node operation exceptions."""
 
         class Meta:
-            model = DesiredNodeOperationalConfig
+            model = DesiredNodeOperationalOverride
             fields = (
                 "desired_node",
-                "actual_state_policy",
-                "expected_host_os",
                 "declared_host_os",
                 "connection_path",
                 "local_endpoint",

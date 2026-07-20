@@ -261,7 +261,7 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(result.errors, [])
         self.assertEqual(result.desired_endpoints[0].desired_node, "missing-node")
 
-    def test_loader_normalizes_placement_and_operational_config(self) -> None:
+    def test_loader_normalizes_placement_and_operational_override(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "intent_sources.yaml"
             path.write_text(
@@ -283,10 +283,8 @@ class LoaderTests(unittest.TestCase):
                 "    assignment_source: yaml\n"
                 "    config:\n"
                 "      dhcp_authoritative: true\n"
-                "desired_node_operational_configs:\n"
+                "desired_node_operational_overrides:\n"
                 "  - desired_node: agdns01\n"
-                "    actual_state_policy: required\n"
-                "    expected_host_os: linux\n"
                 "    connection_path: tailscale\n"
                 "    tailscale_endpoint:\n"
                 "      name: vpn\n"
@@ -304,8 +302,7 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(placement.desired_service["intent_source"], "infrastructure")
         self.assertEqual(placement.desired_endpoint, {"name": "primary", "endpoint_type": "primary"})
         self.assertEqual(placement.config, {"dhcp_authoritative": True})
-        operational = result.desired_node_operational_configs[0]
-        self.assertEqual(operational.expected_host_os, "linux")
+        operational = result.desired_node_operational_overrides[0]
         self.assertEqual(operational.tailscale_endpoint, {"name": "vpn", "endpoint_type": "vpn"})
 
     def test_loader_rejects_unqualified_and_unknown_placement_fields(self) -> None:
@@ -353,13 +350,12 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(len(result.errors), 1)
         self.assertIn("invalid_service_reference", result.errors[0])
 
-    def test_loader_rejects_invalid_operational_policy(self) -> None:
+    def test_loader_rejects_invalid_operational_override(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "intent_sources.yaml"
             path.write_text(
-                "desired_node_operational_configs:\n"
+                "desired_node_operational_overrides:\n"
                 "  - desired_node: ha01\n"
-                "    actual_state_policy: declared\n"
                 "    declared_host_os: haos\n"
                 "    connection_path: local\n"
                 "    power_control: wol\n"
@@ -370,16 +366,25 @@ class LoaderTests(unittest.TestCase):
             result = load_intent_sources(path)
 
         self.assertIn(
-            "desired_node_operational_configs entry 1 is_laptop must be a boolean.",
+            "desired_node_operational_overrides entry 1 is_laptop must be a boolean.",
             result.errors,
         )
         self.assertIn(
-            "desired_node_operational_configs entry 1 declared local connection requires local_endpoint.",
+            "desired_node_operational_overrides entry 1 HAOS permits only power_control=none.",
             result.errors,
         )
-        self.assertIn(
-            "desired_node_operational_configs entry 1 power_control 'wol' is invalid for haos.",
+
+    def test_loader_rejects_removed_operational_config_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text("desired_node_operational_configs: []\n", encoding="utf-8")
+            result = load_intent_sources(path)
+        self.assertEqual(
             result.errors,
+            [
+                "desired_node_operational_configs is not supported; use "
+                "desired_node_operational_overrides."
+            ],
         )
 
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from .analysis import analyze_intent_sources
 from .importers import (
-    desired_node_operational_config_defaults,
-    desired_node_operational_config_identity,
+    desired_node_operational_override_defaults,
+    desired_node_operational_override_identity,
     desired_service_defaults,
     desired_service_dependencies,
     desired_service_entry_defaults,
@@ -41,7 +41,7 @@ try:
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
-        DesiredNodeOperationalConfig,
+        DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
         IntentSource,
@@ -153,8 +153,8 @@ else:
                         "desired_endpoints": len(load_result.desired_endpoints),
                         "desired_services": len(load_result.desired_services),
                         "desired_service_placements": len(load_result.desired_service_placements),
-                        "desired_node_operational_configs": len(
-                            load_result.desired_node_operational_configs
+                        "desired_node_operational_overrides": len(
+                            load_result.desired_node_operational_overrides
                         ),
                         **counts,
                     }
@@ -393,8 +393,11 @@ def _apply_ipam_reconcile_plan(plan, desired_endpoint, ip_address_model):
                 ip_address.full_clean()
                 ip_address.save()
                 desired_endpoint.realized_ip_address = ip_address
+                desired_endpoint.realized_ip_address_source = "derived"
                 desired_endpoint.full_clean()
-                desired_endpoint.save(update_fields=["realized_ip_address"])
+                desired_endpoint.save(
+                    update_fields=["realized_ip_address", "realized_ip_address_source"]
+                )
                 return plan.__class__(
                     action="create_ip_address_applied",
                     desired_endpoint=plan.desired_endpoint,
@@ -414,8 +417,11 @@ def _apply_ipam_reconcile_plan(plan, desired_endpoint, ip_address_model):
                 ip_address_id = plan.existing_ip_address.get("id") if plan.existing_ip_address else ""
                 ip_address = ip_address_model.objects.get(pk=ip_address_id)
                 desired_endpoint.realized_ip_address = ip_address
+                desired_endpoint.realized_ip_address_source = "derived"
                 desired_endpoint.full_clean()
-                desired_endpoint.save(update_fields=["realized_ip_address"])
+                desired_endpoint.save(
+                    update_fields=["realized_ip_address", "realized_ip_address_source"]
+                )
                 return plan.__class__(
                     action="link_ip_address_applied",
                     desired_endpoint=plan.desired_endpoint,
@@ -494,9 +500,9 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
         "placements_created": 0,
         "placements_updated": 0,
         "placements_unchanged": 0,
-        "operational_configs_created": 0,
-        "operational_configs_updated": 0,
-        "operational_configs_unchanged": 0,
+        "operational_overrides_created": 0,
+        "operational_overrides_updated": 0,
+        "operational_overrides_unchanged": 0,
     }
     seen_urls = set()
     seen_slugs = set()
@@ -578,28 +584,28 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
         )
         counts[f"placements_{status}"] += 1
 
-    for operational_config in load_result.desired_node_operational_configs:
-        desired_node = _resolve_desired_node(operational_config.desired_node)
+    for operational_override in load_result.desired_node_operational_overrides:
+        desired_node = _resolve_desired_node(operational_override.desired_node)
         local_endpoint = _resolve_desired_endpoint(
             desired_node,
-            operational_config.local_endpoint,
+            operational_override.local_endpoint,
             required=False,
         )
         tailscale_endpoint = _resolve_desired_endpoint(
             desired_node,
-            operational_config.tailscale_endpoint,
+            operational_override.tailscale_endpoint,
             required=False,
         )
         status, _obj = _validated_upsert(
-            DesiredNodeOperationalConfig,
-            desired_node_operational_config_identity(operational_config, desired_node.pk),
-            desired_node_operational_config_defaults(
-                operational_config,
+            DesiredNodeOperationalOverride,
+            desired_node_operational_override_identity(operational_override, desired_node.pk),
+            desired_node_operational_override_defaults(
+                operational_override,
                 local_endpoint_id=getattr(local_endpoint, "pk", None),
                 tailscale_endpoint_id=getattr(tailscale_endpoint, "pk", None),
             ),
         )
-        counts[f"operational_configs_{status}"] += 1
+        counts[f"operational_overrides_{status}"] += 1
     return counts
 
 

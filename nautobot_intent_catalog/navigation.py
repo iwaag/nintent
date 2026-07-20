@@ -63,8 +63,8 @@ else:
                             name="Service Placements",
                         ),
                         NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:desirednodeoperationalconfig_list",
-                            name="Node Operational Configs",
+                            link="plugins:nautobot_intent_catalog:desirednodeoperationaloverride_list",
+                            name="Node Operational Overrides",
                         ),
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirediprange_list",
