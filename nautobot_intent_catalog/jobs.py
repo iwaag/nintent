@@ -10,8 +10,8 @@ from .analysis import analyze_intent_sources
 from .importers import (
     desired_node_operational_override_defaults,
     desired_node_operational_override_identity,
-    desired_service_defaults,
-    desired_service_dependencies,
+    desired_service_create_defaults,
+    desired_service_update_fields,
     desired_service_entry_defaults,
     desired_service_entry_identity,
     desired_service_identity,
@@ -24,6 +24,7 @@ from .importers import (
     desired_node_defaults,
     desired_node_identity,
     intent_source_defaults,
+    plan_dependency_sync,
 )
 from .loaders import IntentSourceEntry
 from .loaders import load_default_intent_sources, load_intent_sources
@@ -195,7 +196,9 @@ else:
                 "services_created": 0,
                 "services_updated": 0,
                 "dependencies_created": 0,
-                "dependencies_replaced": 0,
+                "dependencies_updated": 0,
+                "dependencies_deleted": 0,
+                "dependencies_unchanged": 0,
                 "analysis_errors": len(result.errors),
             }
 
@@ -218,29 +221,87 @@ else:
                     continue
 
                 identity = desired_service_identity(service)
-                defaults = desired_service_defaults(service)
-                defaults["last_analyzed_at"] = now
-                service_obj, created = DesiredService.objects.update_or_create(
-                    intent_source=intent_source,
-                    catalog_namespace=identity["catalog_namespace"],
-                    catalog_metadata_name=identity["catalog_metadata_name"],
-                    service_type=identity["service_type"],
-                    defaults=defaults,
-                )
-                if created:
-                    counts["services_created"] += 1
-                else:
-                    counts["services_updated"] += 1
 
-                old_dependency_count = service_obj.dependencies.count()
-                service_obj.dependencies.all().delete()
-                counts["dependencies_replaced"] += old_dependency_count
-                dependencies = [
-                    DesiredDependency(source_service=service_obj, **dependency)
-                    for dependency in desired_service_dependencies(service)
-                ]
-                DesiredDependency.objects.bulk_create(dependencies)
-                counts["dependencies_created"] += len(dependencies)
+                # Reject duplicate normalized dependency keys before any write for this
+                # service (p4/plan.md Step 4.3 item 4). Detecting duplicates only requires
+                # the incoming analysis, so this check runs before the transaction opens and
+                # before the service row itself is touched.
+                try:
+                    plan_dependency_sync(existing=[], service=service)
+                except ValueError as exc:
+                    self.logger.warning("Skipping desired service with malformed dependencies: %s (%s)", _json(service), exc)
+                    continue
+
+                with transaction.atomic():
+                    try:
+                        service_obj = DesiredService.objects.select_for_update().get(
+                            intent_source=intent_source,
+                            catalog_namespace=identity["catalog_namespace"],
+                            catalog_metadata_name=identity["catalog_metadata_name"],
+                            service_type=identity["service_type"],
+                        )
+                        created = False
+                    except DesiredService.DoesNotExist:
+                        service_obj = DesiredService(
+                            intent_source=intent_source,
+                            **desired_service_create_defaults(service),
+                        )
+                        created = True
+
+                    if created:
+                        service_obj.last_analyzed_at = now
+                        service_obj.full_clean()
+                        service_obj.save()
+                        counts["services_created"] += 1
+                    else:
+                        update_fields = desired_service_update_fields(service)
+                        for field_name, value in update_fields.items():
+                            setattr(service_obj, field_name, value)
+                        service_obj.last_analyzed_at = now
+                        service_obj.save(update_fields=[*update_fields.keys(), "last_analyzed_at"])
+                        counts["services_updated"] += 1
+
+                    existing_rows = [
+                        {
+                            "dependency_kind": row.dependency_kind,
+                            "namespace": row.namespace,
+                            "name": row.name,
+                            "raw_ref": row.raw_ref,
+                            "dependency_type": row.dependency_type,
+                        }
+                        for row in service_obj.dependencies.all()
+                    ]
+                    # Duplicates were already rejected above; this second call only differs
+                    # by `existing` (real DB rows), which cannot introduce new duplicates.
+                    dependency_plan = plan_dependency_sync(existing=existing_rows, service=service)
+
+                    if dependency_plan["create"]:
+                        DesiredDependency.objects.bulk_create(
+                            DesiredDependency(source_service=service_obj, **dependency)
+                            for dependency in dependency_plan["create"]
+                        )
+                        counts["dependencies_created"] += len(dependency_plan["create"])
+
+                    for change in dependency_plan["update"]:
+                        kind, namespace, name = change["key"]
+                        DesiredDependency.objects.filter(
+                            source_service=service_obj,
+                            dependency_kind=kind,
+                            namespace=namespace,
+                            name=name,
+                        ).update(raw_ref=change["raw_ref"], dependency_type=change["dependency_type"])
+                    counts["dependencies_updated"] += len(dependency_plan["update"])
+
+                    if dependency_plan["delete_keys"]:
+                        for kind, namespace, name in dependency_plan["delete_keys"]:
+                            DesiredDependency.objects.filter(
+                                source_service=service_obj,
+                                dependency_kind=kind,
+                                namespace=namespace,
+                                name=name,
+                            ).delete()
+                        counts["dependencies_deleted"] += len(dependency_plan["delete_keys"])
+                    counts["dependencies_unchanged"] += len(dependency_plan["unchanged_keys"])
 
             for error in result.errors:
                 self.logger.warning(error)

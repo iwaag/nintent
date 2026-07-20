@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import unittest
 
 from nautobot_intent_catalog.importers import (
+    analysis_provenance_defaults,
     dependency_key,
     desired_endpoint_defaults,
     desired_endpoint_identity,
@@ -13,14 +14,16 @@ from nautobot_intent_catalog.importers import (
     desired_node_identity,
     desired_node_operational_override_defaults,
     desired_node_operational_override_identity,
-    desired_service_defaults,
+    desired_service_create_defaults,
     desired_service_dependencies,
     desired_service_entry_defaults,
     desired_service_entry_identity,
     desired_service_identity,
     desired_service_placement_defaults,
     desired_service_placement_identity,
+    desired_service_update_fields,
     intent_source_defaults,
+    plan_dependency_sync,
 )
 from nautobot_intent_catalog.loaders import (
     DesiredEndpointEntry,
@@ -101,12 +104,125 @@ class ImporterTests(unittest.TestCase):
                 "service_type": "service",
             },
         )
-        defaults = desired_service_defaults(service)
+        defaults = desired_service_create_defaults(service)
         self.assertEqual(defaults["name"], "storage-service")
         self.assertEqual(defaults["slug"], "storage-service")
         self.assertEqual(defaults["source_ref"], "main")
         self.assertEqual(defaults["catalog_owner"], "platform")
-        self.assertEqual(defaults["requirements"]["analysis_reasons"], ["backstage_component_catalog_found"])
+        self.assertEqual(defaults["requirements"], {})
+        self.assertEqual(
+            defaults["analysis_provenance"]["reasons"], ["backstage_component_catalog_found"]
+        )
+
+    def test_desired_service_update_fields_excludes_operator_owned_fields(self) -> None:
+        service = {
+            "name": "storage-service",
+            "catalog": {"namespace": "default", "metadata_name": "storage", "spec_type": "service", "owner": "platform-v2"},
+            "intent_source": {"ref": "main"},
+            "analysis": {"status": "catalog_derived", "confidence": "high", "reasons": ["updated"]},
+        }
+
+        update_fields = desired_service_update_fields(service)
+
+        self.assertEqual(update_fields["catalog_owner"], "platform-v2")
+        self.assertEqual(update_fields["analysis_provenance"]["confidence"], "high")
+        for operator_owned in ("requirements", "lifecycle", "notes", "name", "slug", "display_name"):
+            self.assertNotIn(operator_owned, update_fields)
+
+    def test_analysis_provenance_defaults_rejects_unknown_keys(self) -> None:
+        with self.assertRaises(ValueError):
+            analysis_provenance_defaults({"status": "ok", "unexpected_key": True})
+
+    def test_plan_dependency_sync_creates_updates_deletes_and_preserves_unchanged(self) -> None:
+        service = {
+            "dependencies": [
+                {"kind": "resource", "namespace": "default", "name": "postgresql", "raw_ref": "resource:default/postgresql", "dependency_type": "resource"},
+                {"kind": "component", "namespace": "default", "name": "cache", "raw_ref": "component:default/cache", "dependency_type": "component"},
+            ]
+        }
+        existing = [
+            {
+                "dependency_kind": "resource",
+                "namespace": "default",
+                "name": "postgresql",
+                "raw_ref": "resource:default/postgresql-old",
+                "dependency_type": "resource",
+            },
+            {
+                "dependency_kind": "component",
+                "namespace": "default",
+                "name": "gone",
+                "raw_ref": "component:default/gone",
+                "dependency_type": "component",
+            },
+        ]
+
+        plan = plan_dependency_sync(existing=existing, service=service)
+
+        self.assertEqual(len(plan["create"]), 1)
+        self.assertEqual(dependency_key(plan["create"][0]), ("component", "default", "cache"))
+        self.assertEqual(
+            plan["update"],
+            [{"key": ("resource", "default", "postgresql"), "raw_ref": "resource:default/postgresql", "dependency_type": "resource"}],
+        )
+        self.assertEqual(plan["delete_keys"], [("component", "default", "gone")])
+        self.assertEqual(plan["unchanged_keys"], [])
+
+    def test_plan_dependency_sync_identical_reanalysis_is_fully_unchanged(self) -> None:
+        service = {
+            "dependencies": [
+                {"kind": "resource", "namespace": "default", "name": "postgresql", "raw_ref": "resource:default/postgresql", "dependency_type": "resource"},
+            ]
+        }
+        existing = [
+            {
+                "dependency_kind": "resource",
+                "namespace": "default",
+                "name": "postgresql",
+                "raw_ref": "resource:default/postgresql",
+                "dependency_type": "resource",
+            }
+        ]
+
+        plan = plan_dependency_sync(existing=existing, service=service)
+
+        self.assertEqual(plan, {"create": [], "update": [], "unchanged_keys": [("resource", "default", "postgresql")], "delete_keys": []})
+
+    def test_plan_dependency_sync_update_never_touches_notes_or_resolution(self) -> None:
+        # `existing` rows carry only the natural key plus source-owned raw_ref/dependency_type
+        # (the caller reads exactly these from the ORM); the plan's "update" entries mirror
+        # that shape, so notes/resolution_status/resolved_service on the real row are simply
+        # never part of what this function tells the caller to write.
+        service = {
+            "dependencies": [
+                {"kind": "resource", "namespace": "default", "name": "postgresql", "raw_ref": "resource:default/postgresql-v2", "dependency_type": "resource"},
+            ]
+        }
+        existing = [
+            {
+                "dependency_kind": "resource",
+                "namespace": "default",
+                "name": "postgresql",
+                "raw_ref": "resource:default/postgresql",
+                "dependency_type": "resource",
+            }
+        ]
+
+        plan = plan_dependency_sync(existing=existing, service=service)
+
+        self.assertEqual(len(plan["update"]), 1)
+        self.assertEqual(set(plan["update"][0]), {"key", "raw_ref", "dependency_type"})
+
+    def test_plan_dependency_sync_rejects_duplicate_incoming_keys(self) -> None:
+        service = {
+            "dependencies": [
+                {"kind": "resource", "namespace": "default", "name": "postgresql", "raw_ref": "a", "dependency_type": "resource"},
+                {"kind": "resource", "namespace": "default", "name": "postgresql", "raw_ref": "b", "dependency_type": "resource"},
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "Duplicate dependency key"):
+            plan_dependency_sync(existing=[], service=service)
 
     def test_desired_service_dependencies_drop_malformed_rows(self) -> None:
         service = {
@@ -332,7 +448,7 @@ class ImporterTests(unittest.TestCase):
                 "reason": "primary DNS",
             },
         )
-        self.assertNotIn("placements", desired_service_defaults({"name": "dnsmasq"}))
+        self.assertNotIn("placements", desired_service_create_defaults({"name": "dnsmasq"}))
 
     def test_operational_override_identity_and_defaults(self) -> None:
         operational = DesiredNodeOperationalOverrideEntry(
