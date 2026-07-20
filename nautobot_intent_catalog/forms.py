@@ -17,6 +17,7 @@ try:
         DesiredServicePlacement,
         IntentSource,
     )
+    from .operations.hosts import QUICK_HOST_GENERATE_DNSMASQ, QUICK_HOST_IP_POLICY
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
 else:
@@ -28,9 +29,16 @@ else:
         slug = forms.SlugField(max_length=255, required=False)
         node_type = forms.ChoiceField(
             choices=DesiredNode.NODE_TYPE_CHOICES,
-            initial=DesiredNode.NODE_TYPE_VIRTUAL_MACHINE,
+            initial=DesiredNode.NODE_TYPE_DEVICE,
         )
-        accepted_actual_types = forms.JSONField(required=False, widget=forms.HiddenInput)
+        accepted_actual_types = forms.CharField(
+            required=False,
+            label="Accepted actual types override",
+            help_text=(
+                "Comma-separated (device, virtual_machine, container). Leave blank to derive "
+                "from node type; see the preview above the field."
+            ),
+        )
         lifecycle = forms.ChoiceField(
             choices=DesiredNode.LIFECYCLE_CHOICES,
             initial=DesiredNode.LIFECYCLE_ACTIVE,
@@ -44,10 +52,10 @@ else:
         vpn_dns_name = forms.CharField(max_length=255, required=False)
         protocol = forms.CharField(max_length=64, required=False)
         port = forms.IntegerField(required=False, min_value=1, max_value=65535)
-        generate_dnsmasq = forms.BooleanField(required=False, initial=True)
+        generate_dnsmasq = forms.BooleanField(required=False, initial=QUICK_HOST_GENERATE_DNSMASQ)
         ip_policy = forms.ChoiceField(
             choices=DesiredEndpoint.IP_POLICY_CHOICES,
-            initial=DesiredEndpoint.IP_POLICY_DHCP_RESERVED,
+            initial=QUICK_HOST_IP_POLICY,
         )
         dnsmasq_record_type = forms.ChoiceField(
             choices=DesiredEndpoint.DNSMASQ_RECORD_TYPE_CHOICES,
@@ -75,6 +83,20 @@ else:
             if not generated_slug:
                 raise forms.ValidationError("Enter a slug or a name that can be converted to a slug.")
             return generated_slug
+
+        def clean_accepted_actual_types(self):
+            """Blank means "derive"; a non-blank value is an explicit override.
+
+            Returning ``None`` for a blank override (rather than an empty list)
+            is load-bearing: the operation distinguishes "no override supplied"
+            from "override supplied," and only the former derives from
+            ``node_type`` (see ``operations.hosts._accepted_actual_types``).
+            """
+
+            raw = (self.cleaned_data.get("accepted_actual_types") or "").strip()
+            if not raw:
+                return None
+            return [item.strip() for item in raw.split(",") if item.strip()]
 
         def node_data(self):
             """Return cleaned values for DesiredNode creation."""
@@ -128,8 +150,6 @@ else:
                 "owner",
                 "description",
                 "source_config",
-                "last_import_status",
-                "last_import_summary",
             )
 
 
@@ -155,7 +175,6 @@ else:
                 "prefers_gpu",
                 "min_memory_gb",
                 "requirements",
-                "placement_policy",
                 "notes",
             )
 

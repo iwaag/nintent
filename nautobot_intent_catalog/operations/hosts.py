@@ -20,6 +20,15 @@ except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in loc
     DesiredNode = None  # type: ignore[assignment]
 
 
+# Quick Host Add's composed "one primary bootstrap endpoint" use case defaults to
+# publishing the supplied IP (Phase 4 Decision 5) -- narrower and different from the
+# generic DesiredEndpoint model/REST/YAML default (ip_policy=external,
+# generate_dnsmasq=False). Named here so the form and this operation cannot drift
+# apart into two independent hardcoded literals.
+QUICK_HOST_GENERATE_DNSMASQ = True
+QUICK_HOST_IP_POLICY = "dhcp_reserved"
+
+
 @dataclass(frozen=True)
 class DesiredHostCreationResult:
     """Objects created by a quick host registration operation."""
@@ -32,7 +41,7 @@ def create_desired_node_with_primary_endpoint(
     *,
     name: str,
     slug: str,
-    node_type: str = "virtual_machine",
+    node_type: str = "device",
     accepted_actual_types: list[str] | None = None,
     lifecycle: str = "active",
     role: str | None = None,
@@ -45,8 +54,8 @@ def create_desired_node_with_primary_endpoint(
     vpn_dns_name: str | None = None,
     protocol: str | None = None,
     port: int | None = None,
-    generate_dnsmasq: bool = True,
-    ip_policy: str = "dhcp_reserved",
+    generate_dnsmasq: bool = QUICK_HOST_GENERATE_DNSMASQ,
+    ip_policy: str = QUICK_HOST_IP_POLICY,
     dnsmasq_record_type: str = "host_record",
     endpoint_name: str = "primary",
     endpoint_type: str = "primary",

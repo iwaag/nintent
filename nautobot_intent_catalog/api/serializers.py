@@ -3,7 +3,7 @@
 from nautobot.apps.api import NautobotModelSerializer
 from rest_framework import serializers
 
-from ..models import DesiredEndpoint, DesiredNode, DesiredService
+from ..models import DesiredEndpoint, DesiredNode, DesiredService, IntentSource
 
 
 class DesiredNodeSerializer(NautobotModelSerializer):
@@ -42,11 +42,24 @@ class DesiredNodeSerializer(NautobotModelSerializer):
 
 
 class DesiredServiceSerializer(NautobotModelSerializer):
-    """Serializer for desired service intent."""
+    """Serializer for desired service intent.
+
+    ``intent_source`` is declared as a plain ID-based related field rather than
+    left to ``fields = "__all__"``'s default hyperlink, which tries to resolve
+    a non-existent ``intentsource-detail`` route (no IntentSource viewset is
+    registered -- see ``api/urls.py``) and breaks every GET/list/PATCH once a
+    service has a non-null ``intent_source``. ``analysis_provenance`` and
+    ``last_analyzed_at`` are Job-derived and read-only; ``reconciliation_status``
+    and ``reconciliation_checked_at`` stay writable because nctl dashboard is
+    their intentional sole writer.
+    """
+
+    intent_source = serializers.PrimaryKeyRelatedField(queryset=IntentSource.objects.all())
 
     class Meta:
         model = DesiredService
         fields = "__all__"
+        read_only_fields = ("analysis_provenance", "last_analyzed_at")
 
 
 class DesiredEndpointSerializer(NautobotModelSerializer):

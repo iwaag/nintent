@@ -189,9 +189,12 @@ else:
 
             endpoint = self.result.desired_endpoint
             endpoint_summary = _endpoint_summary(endpoint)
+            node = self.result.desired_node
+            accepted_types_source = "override" if form.cleaned_data.get("accepted_actual_types") else "derived"
             messages.success(
                 self.request,
-                f"Created desired node {self.result.desired_node} with endpoint {endpoint.name}{endpoint_summary}.",
+                f"Created desired node {node} with endpoint {endpoint.name}{endpoint_summary}. "
+                f"Accepted actual types: {', '.join(node.accepted_actual_types)} ({accepted_types_source}).",
             )
             return super().form_valid(form)
 

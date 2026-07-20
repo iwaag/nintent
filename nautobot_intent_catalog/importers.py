@@ -98,7 +98,6 @@ def desired_service_defaults(service: dict[str, Any]) -> dict[str, Any]:
             "analysis_reasons": _list(analysis.get("reasons")),
             "analysis_warnings": _analysis_warnings(analysis),
         },
-        "placement_policy": {},
         "notes": _optional_str(service.get("notes")),
     }
 
@@ -130,7 +129,6 @@ def desired_service_entry_defaults(entry: DesiredServiceEntry) -> dict[str, Any]
         "prefers_gpu": entry.prefers_gpu,
         "min_memory_gb": entry.min_memory_gb,
         "requirements": {},
-        "placement_policy": {},
         "notes": entry.notes,
     }
 
@@ -232,7 +230,10 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
         "protocol": endpoint.protocol,
         "port": endpoint.port,
         "generate_dnsmasq": endpoint.generate_dnsmasq,
-        "ip_policy": endpoint.ip_policy or "external",
+        # loaders._parse_desired_endpoint already resolves a real ip_policy
+        # (explicit or the no-address/no-policy "external" default) before an
+        # entry reaches here; this is a pure projection, not a second default.
+        "ip_policy": endpoint.ip_policy,
         "dnsmasq_record_type": endpoint.dnsmasq_record_type,
         "description": endpoint.description,
     }

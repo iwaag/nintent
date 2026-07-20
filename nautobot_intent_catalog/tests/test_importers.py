@@ -207,10 +207,14 @@ class ImporterTests(unittest.TestCase):
             desired_endpoint_defaults(endpoint)
 
     def test_primary_desired_endpoint_defaults_missing_names_from_resolved_node(self) -> None:
+        # ip_policy="external" here mirrors what loaders._parse_desired_endpoint already
+        # resolves for a no-address entry before it reaches desired_endpoint_defaults;
+        # the importer is a pure projection and no longer supplies a second fallback.
         endpoint = DesiredEndpointEntry(
             name="primary",
             desired_node="pc1",
             endpoint_type="primary",
+            ip_policy="external",
             dns_name=None,
             mdns_name=" ",
         )
@@ -413,7 +417,6 @@ class ImporterTests(unittest.TestCase):
                 "prefers_gpu": False,
                 "min_memory_gb": 2.0,
                 "requirements": {},
-                "placement_policy": {},
                 "notes": "fixed service",
             },
         )

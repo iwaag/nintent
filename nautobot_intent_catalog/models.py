@@ -142,7 +142,7 @@ else:
         prefers_gpu = models.BooleanField(default=False)
         min_memory_gb = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
         requirements = models.JSONField(default=dict, blank=True)
-        placement_policy = models.JSONField(default=dict, blank=True)
+        analysis_provenance = models.JSONField(default=dict, blank=True, editable=False)
         notes = models.TextField(blank=True, null=True)
         last_analyzed_at = models.DateTimeField(blank=True, null=True)
 
@@ -473,7 +473,7 @@ else:
         ip_policy = models.CharField(
             max_length=64,
             choices=IP_POLICY_CHOICES,
-            default=IP_POLICY_STATIC,
+            default=IP_POLICY_EXTERNAL,
         )
         dns_name = models.CharField(max_length=255, blank=True, null=True)
         dns_name_source = models.CharField(

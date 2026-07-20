@@ -11,7 +11,6 @@
                 {{ form.non_field_errors }}
                 {{ form.endpoint_name }}
                 {{ form.endpoint_type }}
-                {{ form.accepted_actual_types }}
 
                 <div class="panel panel-default">
                     <div class="panel-heading">
@@ -21,6 +20,11 @@
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.name %}
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.slug %}
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.node_type %}
+                        <p class="help-block">
+                            Derived accepted actual types: <span id="id_accepted_actual_types_preview"></span>
+                            (used unless overridden below)
+                        </p>
+                        {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.accepted_actual_types %}
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.lifecycle %}
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.role %}
                         {% include "nautobot_intent_catalog/inc/quick_add_field.html" with field=form.description %}
@@ -53,4 +57,32 @@
         </div>
     </div>
 </div>
+<script>
+    // Presentation only: mirrors operations.hosts._accepted_actual_types.
+    // The server re-derives from node_type independently; this preview never
+    // becomes the submitted value unless the operator types an override.
+    (function () {
+        var DERIVED_DEFAULTS = {
+            device: ["device"],
+            virtual_machine: ["virtual_machine"],
+            container: ["container"],
+            service_host: ["device", "virtual_machine", "container"]
+        };
+        var nodeTypeField = document.getElementById("id_node_type");
+        var preview = document.getElementById("id_accepted_actual_types_preview");
+
+        function updatePreview() {
+            if (!nodeTypeField || !preview) {
+                return;
+            }
+            var types = DERIVED_DEFAULTS[nodeTypeField.value] || ["device"];
+            preview.textContent = types.join(", ");
+        }
+
+        if (nodeTypeField) {
+            nodeTypeField.addEventListener("change", updatePreview);
+        }
+        updatePreview();
+    })();
+</script>
 {% endblock content %}
