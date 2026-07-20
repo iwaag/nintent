@@ -156,6 +156,25 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(result.errors, [])
         self.assertEqual(result.desired_nodes[0].lifecycle, "planned")
 
+    def test_loader_falls_back_to_default_lifecycle_for_an_unrecognized_value(self) -> None:
+        # Pre-existing leniency of `_choice()` (unlike node_type's `_choice_with_default_or_error`):
+        # an unrecognized lifecycle silently normalizes to the current default rather than erroring.
+        # This phase changes what that default is, not this validation behavior.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_nodes:\n"
+                "  - name: bogus-lifecycle-node\n"
+                "    node_type: device\n"
+                "    lifecycle: not-a-real-state\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.desired_nodes[0].lifecycle, "active")
+
     def test_loader_reports_invalid_desired_node_actual_type(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "intent_sources.yaml"
