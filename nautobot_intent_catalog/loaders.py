@@ -61,7 +61,7 @@ class DesiredNodeEntry:
     slug: str
     node_type: str = "device"
     accepted_actual_types: list[str] = field(default_factory=list)
-    lifecycle: str = "planned"
+    lifecycle: str = "active"
     role: str | None = None
     description: str | None = None
     expected_spec: dict[str, Any] = field(default_factory=dict)
@@ -442,7 +442,7 @@ def _normalize_desired_node_entry(item: Any, index: int) -> tuple[DesiredNodeEnt
             slug=slug,
             node_type=node_type or "device",
             accepted_actual_types=accepted_actual_types,
-            lifecycle=_choice(item.get("lifecycle"), _LIFECYCLES, "planned"),
+            lifecycle=_choice(item.get("lifecycle"), _LIFECYCLES, "active"),
             role=_optional_str(item.get("role")),
             description=_optional_str(item.get("description")),
             expected_spec=_plain_mapping(expected_spec),

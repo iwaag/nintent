@@ -131,6 +131,7 @@ class HostOperationTests(unittest.TestCase):
         self.assertEqual(result.desired_node.slug, "app-vm-1")
         self.assertEqual(result.desired_node.node_type, "virtual_machine")
         self.assertEqual(result.desired_node.accepted_actual_types, ["virtual_machine"])
+        self.assertEqual(result.desired_node.lifecycle, "active")
         self.assertEqual(result.desired_endpoint.desired_node, result.desired_node)
         self.assertEqual(result.desired_endpoint.name, "primary")
         self.assertEqual(result.desired_endpoint.endpoint_type, "primary")
@@ -159,6 +160,15 @@ class HostOperationTests(unittest.TestCase):
         )
 
         self.assertEqual(result.desired_node.accepted_actual_types, ["device", "virtual_machine"])
+
+    def test_create_desired_node_with_primary_endpoint_preserves_explicit_planned_lifecycle(self) -> None:
+        result = hosts.create_desired_node_with_primary_endpoint(
+            name="Staged VM",
+            slug="staged-vm",
+            lifecycle="planned",
+        )
+
+        self.assertEqual(result.desired_node.lifecycle, "planned")
 
     def test_blank_primary_endpoint_dns_and_mdns_names_are_defaulted(self) -> None:
         result = hosts.create_desired_node_with_primary_endpoint(

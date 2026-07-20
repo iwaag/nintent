@@ -34,7 +34,7 @@ def create_desired_node_with_primary_endpoint(
     slug: str,
     node_type: str = "virtual_machine",
     accepted_actual_types: list[str] | None = None,
-    lifecycle: str = "planned",
+    lifecycle: str = "active",
     role: str | None = None,
     description: str | None = None,
     intent_source: Any | None = None,

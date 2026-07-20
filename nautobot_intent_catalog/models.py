@@ -296,7 +296,7 @@ else:
         lifecycle = models.CharField(
             max_length=64,
             choices=LIFECYCLE_CHOICES,
-            default=LIFECYCLE_PLANNED,
+            default=LIFECYCLE_ACTIVE,
         )
         role = models.CharField(max_length=255, blank=True, null=True)
         description = models.TextField(blank=True, null=True)

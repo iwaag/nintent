@@ -138,6 +138,23 @@ class LoaderTests(unittest.TestCase):
 
         self.assertEqual(result.errors, [])
         self.assertEqual(result.desired_nodes[0].accepted_actual_types, ["device", "virtual_machine", "container"])
+        self.assertEqual(result.desired_nodes[0].lifecycle, "active")
+
+    def test_loader_preserves_explicit_planned_desired_node_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_nodes:\n"
+                "  - name: staged-node\n"
+                "    node_type: device\n"
+                "    lifecycle: planned\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.desired_nodes[0].lifecycle, "planned")
 
     def test_loader_reports_invalid_desired_node_actual_type(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

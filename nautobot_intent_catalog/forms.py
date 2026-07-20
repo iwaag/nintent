@@ -33,7 +33,7 @@ else:
         accepted_actual_types = forms.JSONField(required=False, widget=forms.HiddenInput)
         lifecycle = forms.ChoiceField(
             choices=DesiredNode.LIFECYCLE_CHOICES,
-            initial=DesiredNode.LIFECYCLE_PLANNED,
+            initial=DesiredNode.LIFECYCLE_ACTIVE,
         )
         role = forms.CharField(max_length=255, required=False)
         description = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
