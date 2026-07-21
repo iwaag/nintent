@@ -2,9 +2,37 @@
 
 from nautobot.apps.api import NautobotModelViewSet
 
-from ..filters import DesiredEndpointFilterSet, DesiredNodeFilterSet, DesiredServiceFilterSet
-from ..models import DesiredEndpoint, DesiredNode, DesiredService
-from .serializers import DesiredEndpointSerializer, DesiredNodeSerializer, DesiredServiceSerializer
+from ..filters import (
+    AlignmentReviewFilterSet,
+    BrainDumpDocumentFilterSet,
+    DesiredEndpointFilterSet,
+    DesiredNodeFilterSet,
+    DesiredServiceFilterSet,
+)
+from ..models import AlignmentReview, BrainDumpDocument, DesiredEndpoint, DesiredNode, DesiredService
+from .serializers import (
+    AlignmentReviewSerializer,
+    BrainDumpDocumentSerializer,
+    DesiredEndpointSerializer,
+    DesiredNodeSerializer,
+    DesiredServiceSerializer,
+)
+
+
+class BrainDumpDocumentViewSet(NautobotModelViewSet):
+    """Read/write API endpoint for Braindump documents."""
+
+    queryset = BrainDumpDocument.objects.select_related("alignment_review")
+    serializer_class = BrainDumpDocumentSerializer
+    filterset_class = BrainDumpDocumentFilterSet
+
+
+class AlignmentReviewViewSet(NautobotModelViewSet):
+    """Read/write API endpoint for Alignment Reviews."""
+
+    queryset = AlignmentReview.objects.select_related("braindump")
+    serializer_class = AlignmentReviewSerializer
+    filterset_class = AlignmentReviewFilterSet
 
 
 class DesiredNodeViewSet(NautobotModelViewSet):

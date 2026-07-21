@@ -3,7 +3,44 @@
 from nautobot.apps.api import NautobotModelSerializer
 from rest_framework import serializers
 
-from ..models import DesiredEndpoint, DesiredNode, DesiredService, IntentSource
+from ..models import AlignmentReview, BrainDumpDocument, DesiredEndpoint, DesiredNode, DesiredService, IntentSource
+
+
+class BrainDumpDocumentSerializer(NautobotModelSerializer):
+    """Serializer for Braindump documents.
+
+    ``title``/``body`` disable DRF's default ``trim_whitespace`` so accepted prose is
+    preserved byte-for-byte (the model's ``clean()``, run via ``ValidatedModelSerializer``,
+    still rejects whitespace-only input). ``authorship`` has no serializer default, so it is
+    required on create; a ``PATCH`` may still omit an unchanged value, per DRF's normal
+    partial-update semantics.
+    """
+
+    title = serializers.CharField(max_length=255, trim_whitespace=False)
+    body = serializers.CharField(trim_whitespace=False)
+    authorship = serializers.ChoiceField(choices=BrainDumpDocument.AUTHORSHIP_CHOICES)
+
+    class Meta:
+        model = BrainDumpDocument
+        fields = "__all__"
+
+
+class AlignmentReviewSerializer(NautobotModelSerializer):
+    """Serializer for one Braindump's current Alignment Review.
+
+    ``braindump`` is a plain UUID primary-key relation, not a nested write.
+    ``summary`` disables ``trim_whitespace`` for the same byte-for-byte reason as
+    ``BrainDumpDocumentSerializer``. The one-review-per-Braindump uniqueness is enforced by
+    the model's ``OneToOneField`` and surfaces as DRF's normal unique-together validation
+    error on a duplicate create.
+    """
+
+    braindump = serializers.PrimaryKeyRelatedField(queryset=BrainDumpDocument.objects.all())
+    summary = serializers.CharField(trim_whitespace=False)
+
+    class Meta:
+        model = AlignmentReview
+        fields = "__all__"
 
 
 class DesiredNodeSerializer(NautobotModelSerializer):

@@ -8,5 +8,7 @@ router = OrderedDefaultRouter(view_name="Intent Catalog")
 router.register("nodes", views.DesiredNodeViewSet)
 router.register("services", views.DesiredServiceViewSet)
 router.register("endpoints", views.DesiredEndpointViewSet)
+router.register("braindumps", views.BrainDumpDocumentViewSet)
+router.register("alignment-reviews", views.AlignmentReviewViewSet)
 
 urlpatterns = router.urls
