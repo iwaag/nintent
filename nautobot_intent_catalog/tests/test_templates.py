@@ -12,6 +12,7 @@ class ObjectViewTemplateTests(unittest.TestCase):
             / "nautobot_intent_catalog"
         )
         expected_templates = {
+            "braindumpdocument.html",
             "desireddependency.html",
             "desiredendpoint.html",
             "desirediprange.html",

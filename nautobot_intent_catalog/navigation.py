@@ -74,6 +74,10 @@ else:
                             link="plugins:nautobot_intent_catalog:source_yaml_list",
                             name="Source YAML",
                         ),
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:braindumpdocument_list",
+                            name="Braindumps",
+                        ),
                     )
                     + _dashboard_items,
                 ),

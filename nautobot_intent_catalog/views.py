@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponseRedirect
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic.edit import FormView
 
 from .loaders import load_default_intent_sources
@@ -13,6 +13,7 @@ try:
     from nautobot.apps.views import ObjectDeleteView, ObjectEditView, ObjectListView, ObjectView
 
     from .filters import (
+        BrainDumpDocumentFilterSet,
         DesiredDependencyFilterSet,
         DesiredEndpointFilterSet,
         DesiredIPRangeFilterSet,
@@ -23,6 +24,8 @@ try:
         IntentSourceFilterSet,
     )
     from .forms import (
+        AlignmentReviewForm,
+        BrainDumpDocumentForm,
         DesiredDependencyForm,
         DesiredEndpointForm,
         DesiredHostQuickAddForm,
@@ -34,6 +37,8 @@ try:
         IntentSourceForm,
     )
     from .models import (
+        AlignmentReview,
+        BrainDumpDocument,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -47,6 +52,7 @@ try:
         create_desired_node_with_primary_endpoint,
     )
     from .tables import (
+        BrainDumpDocumentTable,
         DesiredDependencyTable,
         DesiredEndpointTable,
         DesiredIPRangeTable,
@@ -324,6 +330,83 @@ else:
         """Delete a desired IP range record."""
 
         queryset = DesiredIPRange.objects.all()
+
+
+    class BrainDumpDocumentListView(ObjectListView):
+        """List Braindump documents.
+
+        ``select_related("alignment_review")`` avoids one query per row for the
+        table's review-presence column.
+        """
+
+        queryset = BrainDumpDocument.objects.select_related("alignment_review")
+        filterset = BrainDumpDocumentFilterSet
+        table = BrainDumpDocumentTable
+
+
+    class BrainDumpDocumentView(ObjectView):
+        """Show one Braindump and its current Alignment Review, in separate panels."""
+
+        queryset = BrainDumpDocument.objects.select_related("alignment_review")
+
+
+    class BrainDumpDocumentEditView(ObjectEditView):
+        """Create or edit a Braindump document."""
+
+        queryset = BrainDumpDocument.objects.all()
+        model_form = BrainDumpDocumentForm
+
+
+    class BrainDumpDocumentDeleteView(ObjectDeleteView):
+        """Delete a Braindump document (cascades to its Alignment Review, if any)."""
+
+        queryset = BrainDumpDocument.objects.all()
+
+
+    class AlignmentReviewAddView(ObjectEditView):
+        """Create the current Alignment Review for one Braindump.
+
+        Bound to the parent Braindump via the URL, not a form field, so a review can
+        never be attached to the wrong document. If a review already exists, redirect
+        to its edit route instead of creating a second, competing row.
+        """
+
+        queryset = AlignmentReview.objects.all()
+        model_form = AlignmentReviewForm
+
+        def dispatch(self, request, *args, **kwargs):
+            braindump = get_object_or_404(BrainDumpDocument, pk=kwargs["braindump_pk"])
+            existing_review = getattr(braindump, "alignment_review", None)
+            if existing_review is not None:
+                messages.info(
+                    request,
+                    "This Braindump already has a current review. Edit it instead of creating another.",
+                )
+                return redirect("plugins:nautobot_intent_catalog:alignmentreview_edit", pk=existing_review.pk)
+            return super().dispatch(request, *args, **kwargs)
+
+        def alter_obj(self, obj, request, url_args, url_kwargs):
+            obj.braindump = get_object_or_404(BrainDumpDocument, pk=url_kwargs["braindump_pk"])
+            return obj
+
+
+    class AlignmentReviewEditView(ObjectEditView):
+        """Edit the current Alignment Review's summary."""
+
+        queryset = AlignmentReview.objects.all()
+        model_form = AlignmentReviewForm
+
+
+    class AlignmentReviewDeleteView(ObjectDeleteView):
+        """Delete the current Alignment Review, leaving its Braindump unreviewed."""
+
+        queryset = AlignmentReview.objects.all()
+
+        def get_return_url(self, request, obj=None, default_return_url=None):
+            braindump_id = getattr(obj, "braindump_id", None)
+            if braindump_id:
+                return obj.braindump.get_absolute_url()
+            return super().get_return_url(request, obj, default_return_url)
 
 
     def _add_validation_errors(form, exc):
