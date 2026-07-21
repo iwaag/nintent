@@ -8,6 +8,8 @@ try:
     from nautobot.apps.forms import NautobotModelForm
 
     from .models import (
+        AlignmentReview,
+        BrainDumpDocument,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -306,6 +308,41 @@ else:
                 "power_control",
                 "is_laptop",
             )
+
+
+    class BrainDumpDocumentForm(NautobotModelForm):
+        """Create/edit form for Braindump documents.
+
+        ``title``/``body`` disable Django's default whitespace trimming so accepted
+        prose is preserved byte-for-byte; the model's ``clean()`` still rejects
+        whitespace-only input.
+        """
+
+        title = forms.CharField(max_length=255, strip=False)
+        body = forms.CharField(widget=forms.Textarea(attrs={"rows": 12}), strip=False)
+        authorship = forms.ChoiceField(
+            choices=BrainDumpDocument.AUTHORSHIP_CHOICES,
+            initial=BrainDumpDocument.AUTHORSHIP_USER_DIRECT,
+        )
+
+        class Meta:
+            model = BrainDumpDocument
+            fields = ("title", "body", "authorship")
+
+
+    class AlignmentReviewForm(NautobotModelForm):
+        """Create/edit form for one Braindump's current Alignment Review.
+
+        Contains only ``summary``; the parent ``braindump`` relation is bound by the
+        view, not exposed here, so a review can never be accidentally attached to a
+        different document.
+        """
+
+        summary = forms.CharField(widget=forms.Textarea(attrs={"rows": 12}), strip=False)
+
+        class Meta:
+            model = AlignmentReview
+            fields = ("summary",)
 
 
     class DesiredIPRangeForm(NautobotModelForm):

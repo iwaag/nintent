@@ -8,6 +8,7 @@ try:
     from nautobot.apps.tables import BaseTable, ButtonsColumn, ToggleColumn
 
     from .models import (
+        BrainDumpDocument,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -289,6 +290,40 @@ else:
                 "ansible_port",
                 "power_control",
                 "is_laptop",
+                "actions",
+            )
+            default_columns = fields
+
+
+    class BrainDumpDocumentTable(BaseTable):
+        """Braindump document list table.
+
+        Uses ``select_related("alignment_review")`` in the view queryset so review
+        presence/timestamp does not add an N+1 query per row.
+        """
+
+        pk = ToggleColumn()
+        title = tables.LinkColumn()
+        last_updated = tables.Column(verbose_name="Braindump updated")
+        review = tables.Column(empty_values=(), verbose_name="Review")
+        actions = ButtonsColumn(BrainDumpDocument, buttons=TABLE_ACTION_BUTTONS)
+
+        def render_review(self, record):
+            """Show the review's own update time, or Unreviewed if there is none."""
+
+            review = getattr(record, "alignment_review", None)
+            if review is None:
+                return "Unreviewed"
+            return review.last_updated
+
+        class Meta(BaseTable.Meta):
+            model = BrainDumpDocument
+            fields = (
+                "pk",
+                "title",
+                "authorship",
+                "last_updated",
+                "review",
                 "actions",
             )
             default_columns = fields

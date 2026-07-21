@@ -7,6 +7,8 @@ try:
     from nautobot.apps.filters import NautobotFilterSet
 
     from .models import (
+        AlignmentReview,
+        BrainDumpDocument,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -202,6 +204,29 @@ else:
             return queryset.filter(desired_node__name__icontains=value) | queryset.filter(
                 desired_node__slug__icontains=value
             )
+
+    class BrainDumpDocumentFilterSet(NautobotFilterSet):
+        """Filters for Braindump documents."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = BrainDumpDocument
+            fields = ("id", "title", "authorship")
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return queryset.filter(title__icontains=value)
+
+
+    class AlignmentReviewFilterSet(NautobotFilterSet):
+        """Filters for Alignment Reviews. No prose/full-text search on ``summary``."""
+
+        class Meta:
+            model = AlignmentReview
+            fields = ("id", "braindump")
+
 
     class DesiredIPRangeFilterSet(NautobotFilterSet):
         """Filters for desired IP ranges."""
