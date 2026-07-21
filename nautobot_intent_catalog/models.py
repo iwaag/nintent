@@ -842,3 +842,67 @@ else:
 
         def get_absolute_url(self) -> str:
             return reverse("plugins:nautobot_intent_catalog:desirediprange", args=[self.pk])
+
+
+    @extras_features("graphql")
+    class BrainDumpDocument(PrimaryModel):
+        """User-originated free-form prose describing wishes, constraints, or preferences."""
+
+        AUTHORSHIP_USER_DIRECT = "user_direct"
+        AUTHORSHIP_AGENT_TRANSCRIBED = "agent_transcribed"
+        AUTHORSHIP_CHOICES = (
+            (AUTHORSHIP_USER_DIRECT, "User direct"),
+            (AUTHORSHIP_AGENT_TRANSCRIBED, "Agent transcribed"),
+        )
+
+        title = models.CharField(max_length=255)
+        body = models.TextField()
+        authorship = models.CharField(max_length=32, choices=AUTHORSHIP_CHOICES)
+
+        class Meta:
+            ordering = ("-last_updated", "title")
+            verbose_name = "Braindump document"
+            verbose_name_plural = "Braindump documents"
+
+        def __str__(self) -> str:
+            return self.title
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:braindumpdocument", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            if not str(self.title or "").strip():
+                errors["title"] = "Title must not be empty or whitespace-only."
+            if not str(self.body or "").strip():
+                errors["body"] = "Body must not be empty or whitespace-only."
+            if errors:
+                raise ValidationError(errors)
+
+
+    @extras_features("graphql")
+    class AlignmentReview(PrimaryModel):
+        """The AI agent's latest natural-language reply to one Braindump."""
+
+        braindump = models.OneToOneField(
+            BrainDumpDocument,
+            on_delete=models.CASCADE,
+            related_name="alignment_review",
+        )
+        summary = models.TextField()
+
+        class Meta:
+            verbose_name = "Alignment review"
+            verbose_name_plural = "Alignment reviews"
+
+        def __str__(self) -> str:
+            return f"Alignment review for {self.braindump}"
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:braindumpdocument", args=[self.braindump_id])
+
+        def clean(self):
+            super().clean()
+            if not str(self.summary or "").strip():
+                raise ValidationError({"summary": "Summary must not be empty or whitespace-only."})
