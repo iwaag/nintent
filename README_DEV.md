@@ -98,17 +98,19 @@ direct assumptions such as `IPAddress.address` through evaluation logic.
 
 ## REST API
 
-`DesiredNode` and `DesiredEndpoint` are the only two models with a REST API
-today, deliberately scoped to the two models an agent needs to check
-desired-vs-actual host/IP state. The implementation lives under
-`nautobot_intent_catalog/api/`:
+`DesiredNode`, `DesiredService`, and `DesiredEndpoint` are the only three
+models with a REST API today, deliberately scoped to the models an agent
+needs to check desired-vs-actual host/service/IP state. The implementation
+lives under `nautobot_intent_catalog/api/`:
 
-- `api/serializers.py`: `DesiredNodeSerializer` / `DesiredEndpointSerializer`,
-  both plain `NautobotModelSerializer` subclasses with `fields = "__all__"`.
-- `api/views.py`: `DesiredNodeViewSet` / `DesiredEndpointViewSet`, both plain
-  `NautobotModelViewSet` subclasses reusing the existing `DesiredNodeFilterSet`
-  / `DesiredEndpointFilterSet` from `filters.py`.
-- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes` and
+- `api/serializers.py`: `DesiredNodeSerializer` / `DesiredServiceSerializer` /
+  `DesiredEndpointSerializer`, plain `NautobotModelSerializer` subclasses with
+  `fields = "__all__"`.
+- `api/views.py`: `DesiredNodeViewSet` / `DesiredServiceViewSet` /
+  `DesiredEndpointViewSet`, plain `NautobotModelViewSet` subclasses reusing the
+  existing `DesiredNodeFilterSet` / `DesiredServiceFilterSet` /
+  `DesiredEndpointFilterSet` from `filters.py`.
+- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `services`, and
   `endpoints`. Nautobot auto-discovers this via
   `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in
   `nautobot.extras.plugins.__init__`, so no manual URL wiring in the main
@@ -130,6 +132,7 @@ exists inside a real Nautobot process. Verify it against a running instance:
 
 ```bash
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/nodes/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/services/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/endpoints/
 ```
 
