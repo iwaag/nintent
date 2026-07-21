@@ -98,21 +98,26 @@ direct assumptions such as `IPAddress.address` through evaluation logic.
 
 ## REST API
 
-`DesiredNode`, `DesiredService`, and `DesiredEndpoint` are the only three
-models with a REST API today, deliberately scoped to the models an agent
-needs to check desired-vs-actual host/service/IP state. The implementation
-lives under `nautobot_intent_catalog/api/`:
+`DesiredNode`, `DesiredService`, `DesiredEndpoint`, `BrainDumpDocument`, and
+`AlignmentReview` are the five models with a REST API today. The first three
+are deliberately scoped to the models an agent needs to check
+desired-vs-actual host/service/IP state; the last two are the Braindump
+exchange-diary pair (see the "Braindump and Alignment Review" section in
+`README.md`). The implementation lives under `nautobot_intent_catalog/api/`:
 
 - `api/serializers.py`: `DesiredNodeSerializer` / `DesiredServiceSerializer` /
-  `DesiredEndpointSerializer`, plain `NautobotModelSerializer` subclasses with
+  `DesiredEndpointSerializer` / `BrainDumpDocumentSerializer` /
+  `AlignmentReviewSerializer`, plain `NautobotModelSerializer` subclasses with
   `fields = "__all__"`.
 - `api/views.py`: `DesiredNodeViewSet` / `DesiredServiceViewSet` /
-  `DesiredEndpointViewSet`, plain `NautobotModelViewSet` subclasses reusing the
+  `DesiredEndpointViewSet` / `BrainDumpDocumentViewSet` /
+  `AlignmentReviewViewSet`, plain `NautobotModelViewSet` subclasses reusing the
   existing `DesiredNodeFilterSet` / `DesiredServiceFilterSet` /
-  `DesiredEndpointFilterSet` from `filters.py`.
-- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `services`, and
-  `endpoints`. Nautobot auto-discovers this via
-  `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in
+  `DesiredEndpointFilterSet` / `BrainDumpDocumentFilterSet` /
+  `AlignmentReviewFilterSet` from `filters.py`.
+- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `services`,
+  `endpoints`, `braindumps`, and `alignment-reviews`. Nautobot auto-discovers
+  this via `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in
   `nautobot.extras.plugins.__init__`, so no manual URL wiring in the main
   Nautobot install is required beyond the existing App installation.
 
@@ -134,6 +139,8 @@ exists inside a real Nautobot process. Verify it against a running instance:
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/nodes/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/services/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/endpoints/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/braindumps/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/alignment-reviews/
 ```
 
 A 404 on `/api/plugins/intent-catalog/...` after installing this change

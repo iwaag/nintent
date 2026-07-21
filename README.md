@@ -273,6 +273,63 @@ PATCH `reconciliation_status`/`reconciliation_checked_at` (see below). Other mod
 `DesiredServicePlacement` are not yet exposed through the REST API and remain
 GraphQL-read/UI/ORM-managed for now.
 
+## Braindump and Alignment Review
+
+nintent also stores a small exchange diary above desired state: a `BrainDumpDocument` holds a
+user-originated free-form wish, constraint, or preference, and its zero-or-one current
+`AlignmentReview` holds the AI agent's latest natural-language reply after reading that Braindump
+together with current desired/actual state. See
+[devdocs/big/braindump/roadmap.md](../devdocs/big/braindump/roadmap.md) in the parent repository for
+the full design; this section documents only the nintent-side surface.
+
+- **UI entry**: the `Braindumps` navigation item lists, and lets a user create/edit/delete,
+  `BrainDumpDocument` rows. Each Braindump's detail page shows the user's text and the current
+  Alignment Review (or "Unreviewed") in two clearly separate panels, so AI-derived text is never
+  mistaken for the user's own words.
+- **REST**: ordinary `NautobotModelViewSet` CRUD at
+
+  ```text
+  /api/plugins/intent-catalog/braindumps/
+  /api/plugins/intent-catalog/alignment-reviews/
+  ```
+
+  `authorship` (`user_direct` or `agent_transcribed`) has no default and must be supplied
+  explicitly on every Braindump create. `AlignmentReview.braindump` is a UUID primary-key relation,
+  not a nested write; creating a second review for the same Braindump fails with the framework's
+  normal uniqueness validation response, and replacing a review is an ordinary `PATCH`/`PUT` of the
+  existing row.
+- **GraphQL** (read-only, framework-generated via `@extras_features("graphql")`): the canonical
+  top-level query fields are `braindump_document(id)` / `braindump_documents(...)` and
+  `alignment_review(id)` / `alignment_reviews(...)`. The pinned Phase 2 handoff query:
+
+  ```graphql
+  query {
+    braindump_documents {
+      id
+      title
+      body
+      authorship
+      created
+      last_updated
+      alignment_review {
+        id
+        summary
+        created
+        last_updated
+      }
+    }
+  }
+  ```
+
+- **Writer ownership**: the user, or an agent transcribing confirmed user words, writes
+  `BrainDumpDocument`; only the agent writes `AlignmentReview`. Neither model is written by nctl
+  drift/reconcile, nintent Jobs, nodeutils, or Ansible.
+- **Non-executable boundary**: `body` and `summary` are opaque, autoescaped text — never rendered
+  as Markdown/HTML, never passed through `safe`, and never a path into desired state, drift,
+  reconcile, Jobs, nodeutils, or host actuation. Turning a Braindump wish into a structured
+  desired-state change remains a separate, explicit user-confirmed action through the normal
+  nintent/nctl write paths.
+
 ## Reconciliation status fields and the dashboard link
 
 `DesiredNode` and `DesiredService` each carry `reconciliation_status` (blank until first written;
