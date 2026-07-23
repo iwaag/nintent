@@ -143,11 +143,157 @@ class IPAMReconcilePlanningTests(unittest.TestCase):
         self.assertEqual(plan.action, "conflict")
         self.assertEqual(plan.reasons, ["realized_ip_address_mismatch"])
 
-    def test_non_dhcp_reserved_endpoint_is_skipped(self) -> None:
+    def test_static_endpoint_without_observation_is_manual_review_skip(self) -> None:
         plan = plan_endpoint_ipam_reconcile(endpoint(ip_policy="static"), ip_candidates=[])
 
         self.assertEqual(plan.action, "skip")
-        self.assertEqual(plan.reasons, ["ip_policy_not_dhcp_reserved"])
+        self.assertEqual(plan.reasons, ["observation_missing"])
+        self.assertEqual(plan.eligibility_basis, "observation_missing")
+
+    def test_static_endpoint_with_matching_observation_creates_host_type(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+            observed_ip_candidates=["192.0.2.10"],
+        )
+
+        self.assertEqual(plan.action, "create_ip_address")
+        self.assertEqual(plan.create_fields["type"], "host")
+        self.assertEqual(plan.eligibility_basis, "eligible")
+        self.assertEqual(plan.observed_ip_candidates, ["192.0.2.10"])
+
+    def test_external_endpoint_with_matching_observation_creates_host_type(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="external"),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+            observed_ip_candidates=["192.0.2.10/24"],
+        )
+
+        self.assertEqual(plan.action, "create_ip_address")
+        self.assertEqual(plan.create_fields["type"], "host")
+
+    def test_observation_matches_by_host_portion_despite_different_prefix(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static", ip_address="192.0.2.10/24"),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+            observed_ip_candidates=["192.0.2.10/32"],
+        )
+
+        self.assertEqual(plan.action, "create_ip_address")
+
+    def test_mismatching_observation_is_conflict(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[],
+            observed_ip_candidates=["198.51.100.5"],
+        )
+
+        self.assertEqual(plan.action, "skip")
+        self.assertEqual(plan.reasons, ["observation_mismatch"])
+        self.assertEqual(plan.observed_ip_candidates, ["198.51.100.5"])
+
+    def test_multiple_conflicting_observations_are_ambiguous(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[],
+            observed_ip_candidates=["192.0.2.10", "198.51.100.5"],
+        )
+
+        self.assertEqual(plan.action, "skip")
+        self.assertEqual(plan.reasons, ["observation_ambiguous"])
+        self.assertEqual(plan.observed_ip_candidates, ["192.0.2.10", "198.51.100.5"])
+
+    def test_dhcp_reserved_endpoint_does_not_require_observation(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="dhcp_reserved"),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+        )
+
+        self.assertEqual(plan.action, "create_ip_address")
+        self.assertEqual(plan.eligibility_basis, "eligible")
+
+    def test_unknown_policy_fails_closed(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(endpoint(ip_policy="bogus"), ip_candidates=[])
+
+        self.assertEqual(plan.action, "skip")
+        self.assertEqual(plan.reasons, ["unknown_ip_policy"])
+
+    def test_existing_host_type_is_compatible_with_static(self) -> None:
+        existing = ip_address(type="host")
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[existing],
+            observed_ip_candidates=["192.0.2.10"],
+        )
+
+        self.assertEqual(plan.action, "link_ip_address")
+
+    def test_existing_dhcp_type_conflicts_with_static(self) -> None:
+        existing = ip_address(type="dhcp")
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[existing],
+            observed_ip_candidates=["192.0.2.10"],
+        )
+
+        self.assertEqual(plan.action, "conflict")
+        self.assertEqual(plan.reasons, ["ip_address_type_conflict"])
+
+    def test_existing_host_type_conflicts_with_dhcp_reserved(self) -> None:
+        existing = ip_address(type="host")
+        plan = plan_endpoint_ipam_reconcile(endpoint(ip_policy="dhcp_reserved"), ip_candidates=[existing])
+
+        self.assertEqual(plan.action, "conflict")
+        self.assertEqual(plan.reasons, ["ip_address_type_conflict"])
+
+    def test_create_does_not_proceed_without_required_type_choice(self) -> None:
+        class ModelWithoutHostChoice:
+            _meta = FakeMeta(
+                [
+                    FakeField("host"),
+                    FakeField("mask_length"),
+                    FakeField("dns_name"),
+                    FakeField("type", choices=(("dhcp", "DHCP"),)),
+                    FakeField("status"),
+                ]
+            )
+
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[],
+            ip_address_model=ModelWithoutHostChoice,
+            observed_ip_candidates=["192.0.2.10"],
+        )
+
+        self.assertEqual(plan.action, "conflict")
+        self.assertEqual(plan.reasons, ["ip_address_type_unresolvable"])
+
+    def test_invalid_desired_ip_is_out_of_scope_regardless_of_policy(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static", ip_address="not an ip"),
+            ip_candidates=[],
+            observed_ip_candidates=["192.0.2.10"],
+        )
+
+        self.assertEqual(plan.action, "skip")
+        self.assertEqual(plan.reasons, ["missing_ip_address"])
+
+    def test_summary_includes_policy_observation_and_eligibility_evidence(self) -> None:
+        plan = plan_endpoint_ipam_reconcile(
+            endpoint(ip_policy="static"),
+            ip_candidates=[],
+            ip_address_model=FakeIPAddressModel,
+            observed_ip_candidates=["192.0.2.10"],
+        )
+        payload = plan.as_dict()
+
+        self.assertEqual(payload["ip_policy"], "static")
+        self.assertEqual(payload["observed_ip_candidates"], ["192.0.2.10"])
+        self.assertEqual(payload["eligibility_basis"], "eligible")
 
     def test_invalid_ip_is_skipped(self) -> None:
         plan = plan_endpoint_ipam_reconcile(endpoint(ip_address="not an ip"), ip_candidates=[])
