@@ -32,7 +32,18 @@ else:
             name="Intent Catalog",
             groups=(
                 NavMenuGroup(
-                    name="Intent Catalog",
+                    name="Braindump",
+                    weight=100,
+                    items=(
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:braindumpdocument_list",
+                            name="Braindumps",
+                        ),
+                    ),
+                ),
+                NavMenuGroup(
+                    name="Desired State",
+                    weight=200,
                     items=(
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:intentsource_list",
@@ -49,10 +60,6 @@ else:
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirednode_list",
                             name="Desired Nodes",
-                        ),
-                        NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:desiredhost_quick_add",
-                            name="Quick Host Add",
                         ),
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desiredendpoint_list",
@@ -74,9 +81,15 @@ else:
                             link="plugins:nautobot_intent_catalog:source_yaml_list",
                             name="Source YAML",
                         ),
+                    ),
+                ),
+                NavMenuGroup(
+                    name="Operational Tools",
+                    weight=300,
+                    items=(
                         NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:braindumpdocument_list",
-                            name="Braindumps",
+                            link="plugins:nautobot_intent_catalog:desiredhost_quick_add",
+                            name="Quick Host Add",
                         ),
                     )
                     + _dashboard_items,
