@@ -368,6 +368,26 @@ the summary's `scope` records both the requested slug and the DesiredNode ids/sl
 touched, so a caller can verify the Job stayed in scope rather than trusting the request alone.
 Cluster scope (no `desired_node`) is unchanged from before this version.
 
+The Job handles explicit IP intent, not only DHCP-reserved intent (ipam_policy plan). It
+enumerates every `DesiredEndpoint` with a nonblank `ip_address`, regardless of `ip_policy`, and
+applies a policy-aware eligibility rule before creating or linking anything:
+
+- `dhcp_reserved`: eligible without any self-observation, as before — a DHCP reservation may
+  reserve ledger state before the host has ever been observed.
+- `static` / `external`: eligible only when the endpoint's linked realized Device reports a
+  `primary_ip_address` custom field whose host portion matches the desired IP. A missing,
+  mismatched, or ambiguous (multiple distinct) observation is a manual-review skip, not an
+  automatic write; it is re-evaluated immediately before writing (defense in depth) so a decision
+  nctl made against an older snapshot cannot force a stale write.
+- Every non-`dhcp_reserved` write also chooses Host-equivalent `IPAddress.type` instead of the
+  DHCP-equivalent choice, resolved from live model metadata; an existing candidate whose type is
+  empty, unknown, or incompatible with the endpoint's policy is a conflict, never silently
+  overwritten.
+
+Non-DHCP intent still requires a matching ingested self-observation before automation applies: IPAM
+ledger reconciliation is not a host IP-configuration actuator, and a conflict, skip, or empty
+Job-artifact coverage result is never reported as convergence.
+
 Stable integration boundaries are:
 
 - desired state: nintent models read through Nautobot GraphQL;

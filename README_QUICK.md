@@ -37,7 +37,7 @@ read directly by `nctl render production`; nintent has no profile projection or 
 | `Preview Intent Source Analysis` | Analyze configured sources without writes. |
 | `Import Intent Sources` | Import strict desired-state YAML into ledger models. |
 | `Analyze Intent Sources` | Analyze source catalogs and persist services/dependencies. |
-| `Reconcile Desired IPAM Intent` | Dry-run/apply `dhcp_reserved` endpoints into `IPAddress`. |
+| `Reconcile Desired IPAM Intent` | Dry-run/apply explicit-IP endpoints into `IPAddress` (`dhcp_reserved` always eligible; `static`/`external` need a matching self-observation). |
 
 The old Evaluate Jobs, production inventory export Job, profile sync Job, `IntentEvaluation`, and
 `DeploymentProfileProjection` were removed in 0.6.0.

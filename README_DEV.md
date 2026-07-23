@@ -71,6 +71,25 @@ installed, broken imports should fail loudly instead of falling back to
 `jobs = ()`. Register app Jobs with `register_jobs(*jobs)`, then run the normal
 Nautobot upgrade/sync workflow and restart both web and worker processes.
 
+### `Reconcile Desired IPAM Intent` (ipam_policy plan)
+
+This Job's eligibility/type-resolution logic (`operations/ipam.py`) is Django-free and covered by
+the local suite, but its queryset, real `IPAddress.type` choices, and custom-field reads on a real
+Device row can only be proven against a live Nautobot instance:
+
+- Confirm `nautobot-server makemigrations nautobot_intent_catalog --check --dry-run` reports no
+  changes (this plan added no model fields).
+- Confirm the Job's discovered `Meta.description` no longer says "DHCP-reserved" only.
+- Dry-run (`commit_changes=False`) scoped to one `desired_node` whose primary endpoint has an
+  explicit `static`/`external` IP and a linked realized Device reporting a matching
+  `primary_ip_address` custom field. The summary must show `endpoints: 1`, the endpoint's id, and a
+  Host-equivalent (not DHCP-equivalent) `create_fields.type`.
+- Confirm a Device whose `primary_ip_address` custom field is absent or does not match produces a
+  `skip` row with reason `observation_missing`/`observation_mismatch`, not a create/link attempt.
+- Only after dry-run review, apply (`commit_changes=True`) and confirm the created/linked
+  `IPAddress.type` is actually the Host-equivalent choice the model exposes (never invented), and
+  that `DesiredEndpoint.realized_ip_address_source` is saved as `derived`.
+
 ## Nautobot UI Compatibility
 
 When adding object views for app models, either create the expected
