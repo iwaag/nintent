@@ -331,17 +331,26 @@ else:
 
         class Meta:
             name = "Reconcile Desired IPAM Intent"
-            description = "Dry-run or apply DesiredEndpoint DHCP-reserved IP intent to Nautobot IPAddress rows."
+            description = (
+                "Dry-run or apply explicit DesiredEndpoint IP intent to Nautobot IPAddress rows. "
+                "dhcp_reserved endpoints are always eligible; static/external endpoints additionally "
+                "require a matching self-observed primary IP address."
+            )
             has_sensitive_variables = False
 
         def run(self, commit_changes: bool, include_inactive: bool, desired_node: str = "") -> None:
             requested_desired_node_slug = (desired_node or "").strip()
-            endpoints = DesiredEndpoint.objects.select_related(
-                "desired_node",
-                "desired_node__realized_device",
-                "desired_node__realized_vm",
-                "realized_ip_address",
-            ).filter(ip_policy="dhcp_reserved").order_by("desired_node__slug", "endpoint_type", "name")
+            endpoints = (
+                DesiredEndpoint.objects.select_related(
+                    "desired_node",
+                    "desired_node__realized_device",
+                    "desired_node__realized_vm",
+                    "realized_ip_address",
+                )
+                .exclude(ip_address__isnull=True)
+                .exclude(ip_address="")
+                .order_by("desired_node__slug", "endpoint_type", "name")
+            )
             if not include_inactive:
                 endpoints = endpoints.exclude(desired_node__lifecycle__in=("deprecated", "retired"))
             if requested_desired_node_slug:
@@ -358,6 +367,7 @@ else:
             counts = {
                 "commit_changes": bool(commit_changes),
                 "endpoints": 0,
+                "eligible": 0,
                 "planned_ip_address_creates": 0,
                 "planned_ip_address_links": 0,
                 "created_ip_addresses": 0,
@@ -374,12 +384,19 @@ else:
                 counts["endpoints"] += 1
                 selected_node_ids.add(str(desired_endpoint.desired_node_id))
                 selected_node_slugs.add(desired_endpoint.desired_node.slug)
+                observed_ip_candidates = _observed_ip_candidates(desired_endpoint.desired_node)
+                # Recheck eligibility against current Nautobot state immediately before
+                # writing (defense in depth): the caller-fixed nctl decision that
+                # triggered this run may be stale by the time this row executes.
                 plan = plan_endpoint_ipam_reconcile(
                     desired_endpoint,
                     ip_candidates=ip_candidates,
                     ip_address_model=IPAddress,
                     default_status=default_status,
+                    observed_ip_candidates=observed_ip_candidates,
                 )
+                if plan.eligibility_basis == "eligible":
+                    counts["eligible"] += 1
                 applied_plan = plan
                 if commit_changes and plan.action in {"create_ip_address", "link_ip_address"}:
                     applied_plan = _apply_ipam_reconcile_plan(plan, desired_endpoint, IPAddress)
@@ -425,15 +442,54 @@ def _json(value) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True)
 
 
+def _text(value) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _observed_ip_candidates(desired_node) -> list[dict[str, str]]:
+    """Return self-observation evidence for a DesiredNode's linked realized objects.
+
+    Reads only the `primary_ip_address`/`last_seen` custom fields the nauto
+    `Ingest Nodeutils Inventory` Job already writes onto a realized Device (the
+    same actual-state boundary nctl reads as `ActualFacts.local_ip`). Never
+    reads the controller-local nodeutils cache directly. nauto ingestion
+    currently only writes these fields onto Devices, so a linked VM without its
+    own populated custom field naturally contributes no candidate here -- this
+    does not guess a VM value.
+    """
+
+    candidates: list[dict[str, str]] = []
+    for realized, source in (
+        (getattr(desired_node, "realized_device", None), "realized_device"),
+        (getattr(desired_node, "realized_vm", None), "realized_vm"),
+    ):
+        if realized is None:
+            continue
+        custom_fields = dict(getattr(realized, "custom_field_data", {}) or {})
+        value = _text(custom_fields.get("primary_ip_address"))
+        if not value:
+            continue
+        candidates.append(
+            {
+                "value": value,
+                "basis": f"{source}.primary_ip_address",
+                "last_seen": _text(custom_fields.get("last_seen")),
+            }
+        )
+    return candidates
+
+
 def _default_ip_address_status(ip_address_model):
     """Return a Status row usable for a newly created IPAddress, if any is configured.
 
-    IPAddress.status has no model-level default, so a plain `dhcp_reserved`
-    endpoint create would otherwise always fail `full_clean()` with a required-field
-    error. Prefer "Active", then "Reserved" (matches the dhcp_reserved intent policy
-    this Job already restricts itself to) before falling back to an arbitrary Status
-    assigned to the IPAddress content type -- an alphabetical fallback could otherwise
-    land on something like "Deprecated" for a freshly created address.
+    IPAddress.status has no model-level default, so a plain endpoint create
+    would otherwise always fail `full_clean()` with a required-field error.
+    Prefer "Active", then "Reserved" before falling back to an arbitrary Status
+    assigned to the IPAddress content type -- an alphabetical fallback could
+    otherwise land on something like "Deprecated" for a freshly created
+    address.
     """
 
     from nautobot.extras.models import Status
