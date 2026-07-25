@@ -386,7 +386,11 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
             desired_node_operational_overrides.append(entry)
         errors.extend(entry_errors)
 
+    errors.extend(_duplicate_intent_source_errors(intent_sources))
+    errors.extend(_duplicate_desired_node_errors(desired_nodes))
     errors.extend(_duplicate_endpoint_mac_errors(desired_endpoints))
+    errors.extend(_duplicate_endpoint_identity_errors(desired_endpoints))
+    errors.extend(_duplicate_ip_range_errors(desired_ip_ranges))
     errors.extend(_duplicate_compute_platform_errors(desired_compute_platforms))
     errors.extend(_duplicate_compute_instance_errors(desired_compute_instances))
     errors.extend(_duplicate_service_errors(desired_services))
@@ -1296,6 +1300,40 @@ def _optional_number(value: Any, field_name: str, errors: list[str]) -> float | 
     return float(value)
 
 
+def _duplicate_intent_source_errors(entries: list[IntentSourceEntry]) -> list[str]:
+    """Reject duplicate `intent_sources` identity within one document.
+
+    Import's planner (`_plan_import()`) reads existing DB state once, before any write; two
+    entries sharing one identity would both plan as `create` in preview, then silently coalesce
+    into a single row (last entry wins) at apply time -- a real preview/apply parity break found
+    live in the interface_contract/p1 Step 8 disposable proof. Rejecting the duplicate here,
+    before planning, closes that gap the same way the other six roots already do.
+    """
+
+    seen = set()
+    errors = []
+    for entry in entries:
+        key = ("slug", entry.slug) if entry.source_type != "git_repository" else ("url", entry.url)
+        if key in seen:
+            errors.append(f"intent_sources contains duplicate {key[0]}: {key[1]}.")
+        seen.add(key)
+    return errors
+
+
+def _duplicate_desired_node_errors(entries: list[DesiredNodeEntry]) -> list[str]:
+    """Reject duplicate `desired_nodes` slug within one document (see
+    `_duplicate_intent_source_errors` for why this must be a loader error, not a silent
+    last-entry-wins coalesce at apply time)."""
+
+    seen = set()
+    errors = []
+    for entry in entries:
+        if entry.slug in seen:
+            errors.append(f"desired_nodes contains duplicate slug: {entry.slug}.")
+        seen.add(entry.slug)
+    return errors
+
+
 def _duplicate_service_errors(entries: list[DesiredServiceEntry]) -> list[str]:
     seen = set()
     errors = []
@@ -1340,6 +1378,36 @@ def _duplicate_endpoint_mac_errors(entries: list[DesiredEndpointEntry]) -> list[
         if entry.mac_address in seen:
             errors.append(f"desired_endpoints contains duplicate mac_address: {entry.mac_address}.")
         seen[entry.mac_address] = None
+    return errors
+
+
+def _duplicate_endpoint_identity_errors(entries: list[DesiredEndpointEntry]) -> list[str]:
+    """Reject duplicate `(desired_node, name, endpoint_type)` within one document -- the same
+    silent apply-time-coalesce gap as `_duplicate_desired_node_errors` (Step 8 disposable proof),
+    distinct from the existing `mac_address`-only check above."""
+
+    seen: set[tuple[str, str, str]] = set()
+    errors = []
+    for entry in entries:
+        key = (entry.desired_node, entry.name, entry.endpoint_type)
+        if key in seen:
+            errors.append(
+                "desired_endpoints contains duplicate desired_node/name/endpoint_type: "
+                f"{entry.desired_node}/{entry.name}/{entry.endpoint_type}."
+            )
+        seen.add(key)
+    return errors
+
+
+def _duplicate_ip_range_errors(entries: list[DesiredIPRangeEntry]) -> list[str]:
+    """Reject duplicate `desired_ip_ranges` slug within one document (same class of gap)."""
+
+    seen: set[str] = set()
+    errors = []
+    for entry in entries:
+        if entry.slug in seen:
+            errors.append(f"desired_ip_ranges contains duplicate slug: {entry.slug}.")
+        seen.add(entry.slug)
     return errors
 
 

@@ -934,6 +934,106 @@ class EndpointMacAddressLoaderTests(unittest.TestCase):
             result.errors,
         )
 
+    def test_duplicate_desired_node_slug_is_rejected(self) -> None:
+        """Found live in interface_contract/p1 Step 8: a duplicate desired_nodes slug used to
+        silently coalesce into one row (last entry wins) at Import apply time even though
+        preview planned two `create` rows -- a preview/apply parity break. Must fail closed."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_nodes:\n"
+                "  - name: agrollbacktest\n"
+                "    slug: agrollbacktest\n"
+                "  - name: agrollbacktest-duplicate\n"
+                "    slug: agrollbacktest\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn("desired_nodes contains duplicate slug: agrollbacktest.", result.errors)
+
+    def test_duplicate_intent_source_slug_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "intent_sources:\n"
+                "  - slug: manual\n"
+                "    name: Manual\n"
+                "    source_type: manual\n"
+                "  - slug: manual\n"
+                "    name: Manual Again\n"
+                "    source_type: manual\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn("intent_sources contains duplicate slug: manual.", result.errors)
+
+    def test_duplicate_git_intent_source_url_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "intent_sources:\n"
+                "  - url: https://github.com/example/service\n"
+                "  - url: https://github.com/example/service\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "intent_sources contains duplicate url: https://github.com/example/service.",
+            result.errors,
+        )
+
+    def test_duplicate_endpoint_identity_without_mac_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agdup\n"
+                "    endpoint_type: primary\n"
+                "    ip_policy: external\n"
+                "  - name: primary\n"
+                "    desired_node: agdup\n"
+                "    endpoint_type: primary\n"
+                "    ip_policy: external\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "desired_endpoints contains duplicate desired_node/name/endpoint_type: agdup/primary/primary.",
+            result.errors,
+        )
+
+    def test_duplicate_ip_range_slug_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_ip_ranges:\n"
+                "  - name: dup-range\n"
+                "    slug: dup-range\n"
+                "    start_address: 192.168.0.10\n"
+                "    end_address: 192.168.0.20\n"
+                "    range_policy: static_pool\n"
+                "  - name: dup-range-again\n"
+                "    slug: dup-range\n"
+                "    start_address: 192.168.0.30\n"
+                "    end_address: 192.168.0.40\n"
+                "    range_policy: static_pool\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn("desired_ip_ranges contains duplicate slug: dup-range.", result.errors)
+
 
 class ClosedRootValidationTests(unittest.TestCase):
     """Phase 1 Step 1/Step 3 (interface_contract/p1/plan.md Section 3.1/4.1): exactly the nine

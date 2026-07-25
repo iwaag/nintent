@@ -34,6 +34,21 @@ class FakeFetcher:
 
 
 class AnalysisTests(unittest.TestCase):
+    def test_manual_url_less_intent_source_does_not_crash_analysis(self) -> None:
+        """Found live in interface_contract/p1 Step 8: `urlparse(None)` silently switches to
+        bytes mode instead of raising, and `_source_name()`'s `.strip("/")` then crashed with a
+        bytes/str TypeError for any enabled manual (URL-less) IntentSource -- e.g. the live
+        "Manual" source Phase 0 confirmed exists and is enabled. Every Analyze run would have
+        failed against real data."""
+
+        intent_source = IntentSourceEntry(slug="manual", source_type="manual", url=None, enabled=True)
+        fetcher = FakeFetcher(default_branch=None)
+
+        result = analyze_intent_sources([intent_source], fetch_timeout=1, fetcher=fetcher)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.source_analyses[0]["status"], "insufficient")
+
     def test_disabled_intent_source_is_skipped_without_fetch(self) -> None:
         intent_source = IntentSourceEntry(url="https://github.com/example/service", enabled=False)
         fetcher = FakeFetcher()

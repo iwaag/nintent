@@ -949,7 +949,7 @@ def _plan_import(load_result) -> list:
     ip_range_rows = {
         row["slug"]: row
         for row in DesiredIPRange.objects.values(
-            "pk", "name", "start_address", "end_address", "range_policy", "lifecycle",
+            "pk", "slug", "name", "start_address", "end_address", "range_policy", "lifecycle",
             "generate_dnsmasq", "dnsmasq_options", "description",
         )
     }
@@ -1053,13 +1053,6 @@ def _plan_import(load_result) -> list:
             return row["pk"], True
         return (None, True) if slug in planned_platform_slugs else (None, False)
 
-    instance_rows = {
-        row["desired_node_id"]: row
-        for row in DesiredComputeInstance.objects.values(
-            "pk", "desired_node_id", "platform_id", "instance_kind", "desired_power_state",
-            "vcpus", "memory_mb", "root_disk_gb", "config_schema_version", "config",
-        )
-    }
     instance_rows_by_node_slug = {}
     for row in DesiredComputeInstance.objects.values(
         "pk", "desired_node__slug", "platform_id", "instance_kind", "desired_power_state",

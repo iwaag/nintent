@@ -302,7 +302,9 @@ def _request_text(url: str, timeout: float, headers: dict[str, str] | None = Non
     return raw.decode("utf-8", errors="replace"), len(raw)
 
 
-def _github_owner_repo(url: str) -> tuple[str, str] | None:
+def _github_owner_repo(url: str | None) -> tuple[str, str] | None:
+    if not url:
+        return None
     parsed = urlparse(url)
     if parsed.netloc.lower() != "github.com":
         return None
@@ -313,7 +315,9 @@ def _github_owner_repo(url: str) -> tuple[str, str] | None:
     return parts[0], repo
 
 
-def _gitlab_project_path(url: str) -> tuple[str, str] | None:
+def _gitlab_project_path(url: str | None) -> tuple[str, str] | None:
+    if not url:
+        return None
     parsed = urlparse(url)
     if "gitlab" not in parsed.netloc.lower():
         return None
@@ -508,7 +512,14 @@ def _entity_to_desired_service(
     return _plain_value(service)
 
 
-def _source_name(url: str) -> str:
+def _source_name(url: str | None) -> str:
+    # A manual (URL-less) IntentSource -- e.g. the live "Manual" source Phase 0 confirmed -- has
+    # url=None. `urlparse(None)` silently switches to its bytes-mode code path rather than
+    # raising, which crashes `.strip("/")` two lines below with a bytes/str TypeError; found
+    # live in the interface_contract/p1 Step 8 disposable proof, where this was previously
+    # untested against a real manual+enabled IntentSource.
+    if not url:
+        return ""
     parsed = urlparse(url)
     path = parsed.path.strip("/").removesuffix(".git")
     return path.split("/")[-1] if path else parsed.netloc
