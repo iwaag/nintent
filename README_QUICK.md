@@ -49,17 +49,17 @@ nctl drift --json
 nctl render dnsmasq --json
 nctl render hosts-intent --out ansible_agdev/inventories/generated
 nctl render production --out ansible_agdev/inventories/generated
-nctl dashboard
+nctl ops list
+nctl ops show OPERATION_ID
 ```
 
 `nctl drift` computes fresh state from nintent desired records, Nautobot actual records, and
-nodeutils dumps. `render dnsmasq` computes MAC readiness fresh from the same source snapshot; no
-evaluation Job prerequisite exists. Run `Reconcile Desired IPAM Intent` only when IPAddress
-creation/linking is wanted. `nctl dashboard` runs drift, writes the static dashboard, and PATCHes
-`reconciliation_status`/`reconciliation_checked_at` onto `DesiredNode`/`DesiredService` rows over
-REST — a derived cache of the last run, read-only in nintent's UI. Set
-`PLUGINS_CONFIG["nautobot_intent_catalog"]["dashboard_url"]` to wherever the dashboard is served
-to get a nav-menu link and a "(view dashboard)" link on each node/service page.
+nodeutils dumps — it is the current-status source, not a persisted dashboard. `render dnsmasq`
+computes MAC readiness fresh from the same source snapshot; no evaluation Job prerequisite exists.
+Run `Reconcile Desired IPAM Intent` only when IPAddress creation/linking is wanted. `nctl ops
+list`/`nctl ops show` read the durable on-disk evidence a bounded `nctl reconcile` operation writes.
+nintent has no reconciliation-status field and no dashboard setting/link — see
+[devdocs/big/remove_unused_surfaces/roadmap.md](../devdocs/big/remove_unused_surfaces/roadmap.md).
 
 ## Local tests
 
