@@ -117,54 +117,25 @@ direct assumptions such as `IPAddress.address` through evaluation logic.
 
 ## REST API
 
-`DesiredNode`, `DesiredService`, `DesiredEndpoint`, `BrainDumpDocument`, and
-`AlignmentReview` are the five models with a REST API today. The first three
-are deliberately scoped to the models an agent needs to check
-desired-vs-actual host/service/IP state; the last two are the Braindump
-exchange-diary pair (see the "Braindump and Alignment Review" section in
-`README.md`). The implementation lives under `nautobot_intent_catalog/api/`:
+`DesiredNode`, `BrainDumpDocument`, and `AlignmentReview` are the only three retained REST collections today. All other REST collections (`DesiredService`, `DesiredEndpoint`, `DesiredComputePlatform`, `DesiredComputeInstance`) have been removed because no current non-UI writer needs them. The implementation lives under `nautobot_intent_catalog/api/`:
 
-- `api/serializers.py`: `DesiredNodeSerializer` / `DesiredServiceSerializer` /
-  `DesiredEndpointSerializer` / `BrainDumpDocumentSerializer` /
-  `AlignmentReviewSerializer`, plain `NautobotModelSerializer` subclasses with
-  `fields = "__all__"`.
-- `api/views.py`: `DesiredNodeViewSet` / `DesiredServiceViewSet` /
-  `DesiredEndpointViewSet` / `BrainDumpDocumentViewSet` /
-  `AlignmentReviewViewSet`, plain `NautobotModelViewSet` subclasses reusing the
-  existing `DesiredNodeFilterSet` / `DesiredServiceFilterSet` /
-  `DesiredEndpointFilterSet` / `BrainDumpDocumentFilterSet` /
-  `AlignmentReviewFilterSet` from `filters.py`.
-- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `services`,
-  `endpoints`, `braindumps`, and `alignment-reviews`. Nautobot auto-discovers
-  this via `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in
-  `nautobot.extras.plugins.__init__`, so no manual URL wiring in the main
-  Nautobot install is required beyond the existing App installation.
+- `api/serializers.py`: `DesiredNodeSerializer`, `BrainDumpDocumentSerializer`, and `AlignmentReviewSerializer` are explicit-field serializers (no serializer uses `fields = "__all__"`). `DesiredNodeSerializer` restricts writable fields strictly to `lifecycle`, `realized_device`, and `realized_device_source`.
+- `api/views.py`: `DesiredNodeViewSet`, `BrainDumpDocumentViewSet`, and `AlignmentReviewViewSet`. `DesiredNodeViewSet` allows only incidental `GET` (list/detail) and `PATCH` (detail update for its owned mutation fields); `POST`, `PUT`, `DELETE`, list `PATCH`, and list `DELETE` return `405 Method Not Allowed`.
+- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `braindumps`, and `alignment-reviews`. Nautobot auto-discovers this via `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in `nautobot.extras.plugins.__init__`.
 
-Unlike `models.py`/`filters.py`, the `api/` package does not need the
-`try/except ImportError` guard for Nautobot-less local unit tests: Nautobot
-only imports `api/urls.py` when the App is loaded inside a real Nautobot
-process, so a plain top-level `from nautobot.apps.api import ...` is fine.
-
-To add another model to the API later, follow the same three-file pattern and
-register it on the existing `router` in `api/urls.py`; there is no need for a
-new router per model.
+Unlike `models.py`/`filters.py`, the `api/` package does not need the `try/except ImportError` guard for Nautobot-less local unit tests: Nautobot only imports `api/urls.py` when the App is loaded inside a real Nautobot process, so a plain top-level `from nautobot.apps.api import ...` is fine.
 
 ### Verifying the API in a running Nautobot
 
-There is no local (Django-free) test coverage for the API layer since it only
-exists inside a real Nautobot process. Verify it against a running instance:
+There is no local (Django-free) test coverage for the API layer since it only exists inside a real Nautobot process. Verify it against a running instance:
 
 ```bash
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/nodes/
-curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/services/
-curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/endpoints/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/braindumps/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/alignment-reviews/
 ```
 
-A 404 on `/api/plugins/intent-catalog/...` after installing this change
-usually means the running container still has the old package (see the
-GitHub-install/rebuild flow above) rather than a code problem.
+Requests to removed collections (e.g. `/api/plugins/intent-catalog/services/` or `/api/plugins/intent-catalog/endpoints/`) return 404 Not Found.
 
 ## Rename Cleanup Checks
 

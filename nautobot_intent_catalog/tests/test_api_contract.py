@@ -108,6 +108,44 @@ class StaticAPIContractTests(unittest.TestCase):
                     f"{name} is using fields = '__all__'",
                 )
 
+    def test_removed_rest_routes_fail_reverse(self):
+        """Removed REST collections must fail Django URL reverse lookup."""
+        if not HAS_DJANGO:
+            self.skipTest("Requires django/nautobot")
+        from django.urls import NoReverseMatch
+
+        removed_names = [
+            "plugins-api:nautobot_intent_catalog-api:desiredservice-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredservice-detail",
+            "plugins-api:nautobot_intent_catalog-api:desiredendpoint-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredendpoint-detail",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-detail",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeinstance-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeinstance-detail",
+        ]
+        for name in removed_names:
+            with self.subTest(name=name):
+                with self.assertRaises(NoReverseMatch):
+                    if "-detail" in name:
+                        reverse(name, kwargs={"pk": "00000000-0000-0000-0000-000000000000"})
+                    else:
+                        reverse(name)
+
+    def test_retained_rest_routes_reverse(self):
+        """Retained REST collections must reverse successfully."""
+        if not HAS_DJANGO:
+            self.skipTest("Requires django/nautobot")
+        retained_list_names = [
+            "plugins-api:nautobot_intent_catalog-api:desirednode-list",
+            "plugins-api:nautobot_intent_catalog-api:braindumpdocument-list",
+            "plugins-api:nautobot_intent_catalog-api:alignmentreview-list",
+        ]
+        for name in retained_list_names:
+            with self.subTest(name=name):
+                url = reverse(name)
+                self.assertTrue(url.startswith("/api/plugins/intent-catalog/"))
+
 
 if HAS_DJANGO:
 
@@ -120,6 +158,7 @@ if HAS_DJANGO:
                 "nautobot_intent_catalog.view_desirednode",
                 "nautobot_intent_catalog.add_desirednode",
                 "nautobot_intent_catalog.change_desirednode",
+                "nautobot_intent_catalog.delete_desirednode",
                 "nautobot_intent_catalog.view_braindumpdocument",
                 "nautobot_intent_catalog.add_braindumpdocument",
                 "nautobot_intent_catalog.change_braindumpdocument",
@@ -133,13 +172,18 @@ if HAS_DJANGO:
         def test_removed_rest_collections_return_404(self):
             for endpoint in ["services", "endpoints", "compute-platforms", "compute-instances"]:
                 with self.subTest(endpoint=endpoint):
-                    url = f"/api/plugins/intent-catalog/{endpoint}/"
-                    response = self.client.get(url, **self.header)
-                    self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+                    list_url = f"/api/plugins/intent-catalog/{endpoint}/"
+                    detail_url = f"/api/plugins/intent-catalog/{endpoint}/00000000-0000-0000-0000-000000000000/"
+                    res_list = self.client.get(list_url, **self.header)
+                    res_detail = self.client.get(detail_url, **self.header)
+                    self.assertEqual(res_list.status_code, status.HTTP_404_NOT_FOUND)
+                    self.assertEqual(res_detail.status_code, status.HTTP_404_NOT_FOUND)
 
-        def test_node_post_returns_405(self):
-            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-list")
-            response = self.client.post(
-                url, {"name": "test-node", "slug": "test-node"}, format="json", **self.header
-            )
-            self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        def test_node_disallowed_methods_return_405(self):
+            list_url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-list")
+            
+            res_post = self.client.post(list_url, {"name": "test-node", "slug": "test-node"}, format="json", **self.header)
+            self.assertEqual(res_post.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+            res_delete_list = self.client.delete(list_url, **self.header)
+            self.assertEqual(res_delete_list.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
