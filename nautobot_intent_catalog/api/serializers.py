@@ -92,9 +92,7 @@ class DesiredServiceSerializer(NautobotModelSerializer):
     a non-existent ``intentsource-detail`` route (no IntentSource viewset is
     registered -- see ``api/urls.py``) and breaks every GET/list/PATCH once a
     service has a non-null ``intent_source``. ``analysis_provenance`` and
-    ``last_analyzed_at`` are Job-derived and read-only; ``reconciliation_status``
-    and ``reconciliation_checked_at`` stay writable because nctl dashboard is
-    their intentional sole writer.
+    ``last_analyzed_at`` are Job-derived and read-only.
     """
 
     intent_source = serializers.PrimaryKeyRelatedField(queryset=IntentSource.objects.all())

@@ -3,7 +3,6 @@
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic.edit import FormView
 
@@ -114,9 +113,6 @@ else:
 
         queryset = DesiredService.objects.select_related("intent_source")
 
-        def get_extra_context(self, request, instance):
-            return {"dashboard_url": _configured_dashboard_url()}
-
 
     class DesiredServiceEditView(ObjectEditView):
         """Edit a desired service record."""
@@ -172,9 +168,6 @@ else:
         queryset = DesiredNode.objects.select_related(
             "intent_source", "realized_device"
         ).prefetch_related("controlled_compute_platforms", "desired_compute_instance")
-
-        def get_extra_context(self, request, instance):
-            return {"dashboard_url": _configured_dashboard_url()}
 
 
     class DesiredNodeEditView(ObjectEditView):
@@ -533,26 +526,3 @@ def _configured_source_file():
     plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
     app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
     return app_config.get("intent_sources_file")
-
-
-def _configured_dashboard_url():
-    """Return the nctl dashboard URL from PLUGINS_CONFIG, if set (deployment config, not a model)."""
-
-    plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
-    app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
-    return app_config.get("dashboard_url")
-
-
-def dashboard_redirect(request):
-    """Redirect to the configured nctl dashboard URL.
-
-    Nautobot's NavMenuItem.link is always passed through reverse(), so an external
-    dashboard_url can't be used as the nav link directly (it renders "ERROR: Invalid
-    link!" while still keeping the right href). This resolvable view name is the nav
-    link target instead; it 302s to the real, possibly-external, dashboard_url.
-    """
-
-    dashboard_url = _configured_dashboard_url()
-    if not dashboard_url:
-        raise Http404("dashboard_url is not configured in PLUGINS_CONFIG.")
-    return HttpResponseRedirect(dashboard_url)

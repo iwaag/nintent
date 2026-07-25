@@ -1,32 +1,10 @@
 """Navigation items for the Nautobot Intent Catalog App."""
 
 try:
-    from django.conf import settings
-
     from nautobot.apps.ui import NavMenuGroup, NavMenuItem, NavMenuTab
 except ImportError:  # pragma: no cover - allows loader-only tests without Nautobot.
     menu_items = ()
 else:
-
-    def _configured_dashboard_url():
-        """Read the nctl dashboard link from PLUGINS_CONFIG (deployment config, not a model)."""
-
-        plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
-        app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
-        return app_config.get("dashboard_url")
-
-    _dashboard_items = ()
-    if _configured_dashboard_url():
-        # NavMenuItem.link is always passed through reverse(), so it must be a URL
-        # name, not the raw (possibly external) dashboard_url; dashboard_redirect is a
-        # thin view that 302s to the configured URL.
-        _dashboard_items = (
-            NavMenuItem(
-                link="plugins:nautobot_intent_catalog:dashboard_redirect",
-                name="nctl Dashboard",
-            ),
-        )
-
     menu_items = (
         NavMenuTab(
             name="Intent Catalog",
@@ -99,8 +77,7 @@ else:
                             link="plugins:nautobot_intent_catalog:desiredhost_quick_add",
                             name="Quick Host Add",
                         ),
-                    )
-                    + _dashboard_items,
+                    ),
                 ),
             ),
         ),

@@ -6,7 +6,6 @@ from . import views
 
 urlpatterns = [
     path("sources/source-yaml/", views.source_yaml_intent_source_list, name="source_yaml_list"),
-    path("dashboard/", views.dashboard_redirect, name="dashboard_redirect"),
 ]
 
 if hasattr(views, "IntentSourceListView"):
