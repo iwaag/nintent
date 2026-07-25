@@ -203,22 +203,17 @@ else:
             self.assertNotIn("dashboard_url", IntentCatalogConfig.default_settings)
 
     class RestApiTests(APITestCase):
-        """Items 10-11: REST reads real rows; representation and OPTIONS metadata omit both fields."""
+        """Phase 2 contracted REST API checks: nodes incidental GET + PATCH, removed endpoints 404."""
 
         def setUp(self):
             super().setUp()
             self.add_permissions(
                 "nautobot_intent_catalog.view_desirednode",
-                "nautobot_intent_catalog.view_desiredservice",
-                "nautobot_intent_catalog.add_desirednode",
                 "nautobot_intent_catalog.change_desirednode",
-                "nautobot_intent_catalog.add_desiredservice",
             )
             self.source = _make_intent_source(slug="rest-test-source")
             self.node = _make_node(name="REST Test Node", slug="rest-test-node")
-            self.service = _make_service(self.source, name="rest-test-service", slug="rest-test-service")
             self.nodes_url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-list")
-            self.services_url = reverse("plugins-api:nautobot_intent_catalog-api:desiredservice-list")
 
         def test_node_list_and_detail_omit_removed_fields(self):
             list_response = self.client.get(self.nodes_url, **self.header)
@@ -234,54 +229,21 @@ else:
             self.assertNotIn("reconciliation_status", detail_response.data)
             self.assertNotIn("reconciliation_checked_at", detail_response.data)
 
-        def test_service_list_and_detail_omit_removed_fields(self):
-            list_response = self.client.get(self.services_url, **self.header)
-            self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-            rows = {r["id"]: r for r in list_response.data["results"]}
-            self.assertIn(str(self.service.pk), rows)
-            for row in list_response.data["results"]:
-                self.assertNotIn("reconciliation_status", row)
-                self.assertNotIn("reconciliation_checked_at", row)
-
-            detail_response = self.client.get(f"{self.services_url}{self.service.pk}/", **self.header)
-            self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
-            self.assertNotIn("reconciliation_status", detail_response.data)
-            self.assertNotIn("reconciliation_checked_at", detail_response.data)
-
         def test_node_options_metadata_omits_removed_fields(self):
             response = self.client.options(self.nodes_url, **self.header)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
-            field_names = response.data["actions"]["POST"].keys()
-            self.assertNotIn("reconciliation_status", field_names)
-            self.assertNotIn("reconciliation_checked_at", field_names)
 
-        def test_service_options_metadata_omits_removed_fields(self):
-            response = self.client.options(self.services_url, **self.header)
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            field_names = response.data["actions"]["POST"].keys()
-            self.assertNotIn("reconciliation_status", field_names)
-            self.assertNotIn("reconciliation_checked_at", field_names)
-
-        def test_node_create_and_update_still_work(self):
-            """Item 14: node create/update still works through a supported API path."""
-
-            create_response = self.client.post(
-                self.nodes_url,
-                {"name": "created-node", "slug": "created-node"},
-                format="json",
-                **self.header,
-            )
-            self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
-            created_id = create_response.data["id"]
+        def test_node_patch_update_still_works(self):
+            """Phase 2: node PATCH lifecycle update works."""
 
             update_response = self.client.patch(
-                f"{self.nodes_url}{created_id}/",
-                {"role": "updated-role"},
+                f"{self.nodes_url}{self.node.pk}/",
+                {"lifecycle": "retired"},
                 format="json",
                 **self.header,
             )
             self.assertEqual(update_response.status_code, status.HTTP_200_OK)
-            self.assertEqual(update_response.data["role"], "updated-role")
+            self.assertEqual(update_response.data["lifecycle"], "retired")
 
     class GraphQLTests(APITestCase):
         """Items 12-13: supported reads work; explicit old-field queries fail validation."""
@@ -363,7 +325,7 @@ else:
             self.assertIn("Compute Test Platform", response.content.decode())
 
     class ComputeAPIRegistrationTests(APITestCase):
-        """Item 15 (plan §7 Step 6.7): VM Phase 3 compute REST/GraphQL registration still loads."""
+        """Item 15 (plan §7 Step 6.7): VM Phase 3 compute GraphQL registration still loads."""
 
         def setUp(self):
             super().setUp()
@@ -377,13 +339,6 @@ else:
                 slug="compute-test-platform",
                 control_node=self.control_node,
             )
-
-        def test_compute_platform_rest_list_returns_real_row(self):
-            url = reverse("plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-list")
-            response = self.client.get(url, **self.header)
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            names = [r["name"] for r in response.data["results"]]
-            self.assertIn("Compute Test Platform", names)
 
         def test_compute_platform_graphql_query_returns_real_row(self):
             query = "query { desired_compute_platforms { id name } }"

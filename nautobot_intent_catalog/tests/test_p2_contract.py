@@ -9,15 +9,14 @@ from __future__ import annotations
 import unittest
 
 try:
-    from django.urls import NoReverseMatch, reverse
+    from django.urls import reverse
     from rest_framework import status
     from nautobot.core.testing.api import APITestCase
-    from nautobot.core.testing import TestCase
+    from nautobot.extras.registry import registry
 
     from nautobot_intent_catalog.api import views as api_views
     from nautobot_intent_catalog.api import serializers as api_serializers
     from nautobot_intent_catalog import models
-    from nautobot_intent_catalog import urls as plugin_urls
 except ImportError:  # pragma: no cover
     HAS_DJANGO = False
 else:
@@ -31,33 +30,37 @@ class StaticPhase2ContractTests(unittest.TestCase):
         """IntentSource must NOT be registered with GraphQL in Phase 2."""
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
-        self.assertFalse(
-            hasattr(models.IntentSource, "_graphql_type"),
-            "IntentSource still has GraphQL registration",
+        graphql_models = registry.get("model_features", {}).get("graphql", {}).get("nautobot_intent_catalog", [])
+        self.assertNotIn(
+            "intentsource",
+            graphql_models,
+            "intentsource is still registered in GraphQL model_features registry",
         )
 
     def test_retained_models_have_graphql_decorator(self):
         """All 11 retained models must keep GraphQL registration."""
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
-        retained_models = [
-            models.DesiredNode,
-            models.DesiredEndpoint,
-            models.DesiredIPRange,
-            models.DesiredNodeOperationalOverride,
-            models.DesiredService,
-            models.DesiredDependency,
-            models.DesiredServicePlacement,
-            models.DesiredComputePlatform,
-            models.DesiredComputeInstance,
-            models.BrainDumpDocument,
-            models.AlignmentReview,
+        graphql_models = registry.get("model_features", {}).get("graphql", {}).get("nautobot_intent_catalog", [])
+        retained_model_names = [
+            "desirednode",
+            "desiredendpoint",
+            "desirediprange",
+            "desirednodeoperationaloverride",
+            "desiredservice",
+            "desireddependency",
+            "desiredserviceplacement",
+            "desiredcomputeplatform",
+            "desiredcomputeinstance",
+            "braindumpdocument",
+            "alignmentreview",
         ]
-        for model_cls in retained_models:
-            with self.subTest(model=model_cls.__name__):
-                self.assertTrue(
-                    hasattr(model_cls, "_graphql_type"),
-                    f"{model_cls.__name__} lost GraphQL registration",
+        for name in retained_model_names:
+            with self.subTest(model=name):
+                self.assertIn(
+                    name,
+                    graphql_models,
+                    f"{name} lost GraphQL registration in model_features registry",
                 )
 
     def test_removed_serializers_are_absent(self):
@@ -115,6 +118,7 @@ if HAS_DJANGO:
             super().setUp()
             self.add_permissions(
                 "nautobot_intent_catalog.view_desirednode",
+                "nautobot_intent_catalog.add_desirednode",
                 "nautobot_intent_catalog.change_desirednode",
                 "nautobot_intent_catalog.view_braindumpdocument",
                 "nautobot_intent_catalog.add_braindumpdocument",
