@@ -307,7 +307,7 @@ the full design; this section documents only the nintent-side surface.
   existing row.
 - **GraphQL** (read-only, framework-generated via `@extras_features("graphql")`): the canonical
   top-level query fields are `braindump_document(id)` / `braindump_documents(...)` and
-  `alignment_review(id)` / `alignment_reviews(...)`. The pinned Phase 2 handoff query:
+  `alignment_review(id)` / `alignment_reviews(...)`. The canonical Braindump GraphQL query:
 
   ```graphql
   query {

@@ -376,7 +376,7 @@ else:
 
 
     class BrainDumpGraphQLTests(APITestCase):
-        """GraphQL read coverage using the pinned Phase 2 handoff query."""
+        """GraphQL read coverage using the canonical Braindump query."""
 
         def setUp(self):
             super().setUp()

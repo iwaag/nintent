@@ -203,7 +203,7 @@ else:
             self.assertNotIn("dashboard_url", IntentCatalogConfig.default_settings)
 
     class RestApiTests(APITestCase):
-        """Phase 2 contracted REST API checks: nodes incidental GET + PATCH, removed endpoints 404."""
+        """Contracted REST API checks: nodes incidental GET + PATCH, removed endpoints 404."""
 
         def setUp(self):
             super().setUp()
@@ -234,7 +234,7 @@ else:
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         def test_node_patch_update_still_works(self):
-            """Phase 2: node PATCH lifecycle update works."""
+            """Node PATCH lifecycle update works."""
 
             update_response = self.client.patch(
                 f"{self.nodes_url}{self.node.pk}/",

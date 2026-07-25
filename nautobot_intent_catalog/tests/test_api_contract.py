@@ -1,7 +1,7 @@
-"""Nautobot-runtime and unit tests proving the Phase 2 REST & GraphQL interface contraction.
+"""Nautobot-runtime and unit tests proving the REST & GraphQL interface contract.
 
 Guarded by `try/except ImportError` so it can run under both local Django-free test discovery
-and Nautobot's test runner (`nautobot-server test nautobot_intent_catalog.tests.test_p2_contract`).
+and Nautobot's test runner (`nautobot-server test nautobot_intent_catalog.tests.test_api_contract`).
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ else:
     HAS_DJANGO = True
 
 
-class StaticPhase2ContractTests(unittest.TestCase):
-    """Static checks for Phase 2 contracts that do not require Django/Nautobot DB runtime."""
+class StaticAPIContractTests(unittest.TestCase):
+    """Static checks for REST and GraphQL interface contracts without requiring Django/Nautobot DB runtime."""
 
     def test_intent_source_has_no_graphql_decorator(self):
-        """IntentSource must NOT be registered with GraphQL in Phase 2."""
+        """IntentSource must NOT be registered with GraphQL."""
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
         graphql_models = registry.get("model_features", {}).get("graphql", {}).get("nautobot_intent_catalog", [])
@@ -76,7 +76,7 @@ class StaticPhase2ContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(
                     hasattr(api_serializers, name),
-                    f"{name} should be deleted in Phase 2",
+                    f"{name} should be deleted",
                 )
 
     def test_removed_viewsets_are_absent(self):
@@ -92,7 +92,7 @@ class StaticPhase2ContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(
                     hasattr(api_views, name),
-                    f"{name} should be deleted in Phase 2",
+                    f"{name} should be deleted",
                 )
 
     def test_no_serializer_uses_all_fields(self):
@@ -111,7 +111,7 @@ class StaticPhase2ContractTests(unittest.TestCase):
 
 if HAS_DJANGO:
 
-    class Phase2APIRouteTests(APITestCase):
+    class APIContractRouteTests(APITestCase):
         """Runtime tests for REST routes and method permissions under Nautobot test runner."""
 
         def setUp(self):
