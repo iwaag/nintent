@@ -33,13 +33,22 @@ from .importers import (
     intent_source_defaults,
     plan_dependency_sync,
 )
-from .import_plan import CANONICAL_IMPORT_ROOTS, build_artifact, plan_upsert, unresolved_reference
+from .analysis_plan import dependency_planned_objects, is_dependency_scope_complete
+from .import_plan import (
+    CANONICAL_IMPORT_ROOTS,
+    build_analysis_artifact,
+    build_artifact,
+    plan_upsert,
+    unresolved_reference,
+)
 from .loaders import IntentSourceEntry
 from .loaders import load_default_intent_sources, load_intent_sources
 from .intent_contract import require_unique_reference
 
 IMPORT_SCHEMA_VERSION = "nintent.intent-import.v1"
 IMPORT_ARTIFACT_FILENAME = "intent-import-result.json"
+ANALYSIS_SCHEMA_VERSION = "nintent.intent-analysis.v1"
+ANALYSIS_ARTIFACT_FILENAME = "intent-analysis-result.json"
 
 try:
     from django.conf import settings
@@ -66,64 +75,6 @@ except ImportError:  # pragma: no cover - Nautobot is not available in local uni
         raise
     jobs = ()
 else:
-
-    class PreviewIntentSourceAnalysis(Job):
-        """Dry-run analyze configured intent sources."""
-
-        source_file = StringVar(
-            default="",
-            description="Optional path to intent_sources.yaml. Empty uses App configuration.",
-        )
-        fetch_timeout = IntegerVar(
-            default=10,
-            description="HTTP timeout in seconds for each lightweight file request.",
-        )
-        include_service_preview = BooleanVar(
-            default=True,
-            description="Log generated desired services as JSON.",
-        )
-
-        class Meta:
-            name = "Preview Intent Source Analysis"
-            description = "Dry-run Backstage catalog detection for configured intent sources."
-            has_sensitive_variables = False
-
-        def run(self, source_file: str, fetch_timeout: int, include_service_preview: bool) -> None:
-            if source_file:
-                load_result = load_intent_sources(Path(source_file))
-            else:
-                load_result = load_default_intent_sources(_configured_source_file())
-
-            for error in load_result.errors:
-                self.logger.warning(error)
-
-            if load_result.errors and not load_result.intent_sources:
-                raise ValueError("Intent source catalog could not be loaded; see Job logs for details.")
-
-            result = analyze_intent_sources(
-                load_result.intent_sources,
-                fetch_timeout=float(fetch_timeout),
-            )
-            summary = {
-                "source_path": str(load_result.source_path),
-                "intent_sources": len(load_result.intent_sources),
-                "desired_nodes": len(load_result.desired_nodes),
-                "desired_ip_ranges": len(load_result.desired_ip_ranges),
-                "desired_endpoints": len(load_result.desired_endpoints),
-                "source_analyses": len(result.source_analyses),
-                "desired_services": len(result.desired_services),
-                "analysis_errors": len(result.errors),
-                "generated_at": result.generated_at,
-            }
-
-            self.logger.info("Intent source analysis summary: %s", _json(summary))
-            self.logger.info("Intent source analysis detail: %s", _json(result.source_analyses))
-            for error in result.errors:
-                self.logger.warning(error)
-
-            if include_service_preview:
-                self.logger.info("Desired service preview: %s", _json(result.desired_services))
-
 
     class ImportIntentSources(Job):
         """Import intent source inputs from configured YAML into DB models.
@@ -238,7 +189,11 @@ else:
 
 
     class AnalyzeIntentSources(Job):
-        """Analyze DB-backed intent sources and persist desired services plus dependencies."""
+        """Analyze DB-backed intent sources and plan/apply desired services plus dependencies.
+
+        Defaults to a zero-write preview (plan Section 6). Fetch/normalize (`analyze_intent_sources`,
+        unchanged) always runs; only `apply=true` reaches `_apply_analysis()`.
+        """
 
         fetch_timeout = IntegerVar(
             default=10,
@@ -248,13 +203,20 @@ else:
             default=False,
             description="Include disabled IntentSource rows in analysis.",
         )
+        apply = BooleanVar(
+            default=False,
+            description=(
+                "Commit source/catalog-owned changes atomically. Preview (apply=false, the "
+                "default) performs zero database writes."
+            ),
+        )
 
         class Meta:
             name = "Analyze Intent Sources"
-            description = "Analyze IntentSource records and persist desired services plus dependencies."
+            description = "Analyze IntentSource records and plan/apply desired services plus dependencies."
             has_sensitive_variables = False
 
-        def run(self, fetch_timeout: int, include_disabled: bool) -> None:
+        def run(self, fetch_timeout: int, include_disabled: bool, apply: bool = False) -> None:
             queryset = IntentSource.objects.all()
             if not include_disabled:
                 queryset = queryset.filter(enabled=True)
@@ -264,123 +226,62 @@ else:
 
             result = analyze_intent_sources(entries, fetch_timeout=float(fetch_timeout))
             now = timezone.now()
-            counts = {
-                "intent_sources": len(intent_sources),
-                "source_analyses": len(result.source_analyses),
-                "services_created": 0,
-                "services_updated": 0,
-                "dependencies_created": 0,
-                "dependencies_updated": 0,
-                "dependencies_deleted": 0,
-                "dependencies_unchanged": 0,
-                "analysis_errors": len(result.errors),
-            }
 
-            for analysis in result.source_analyses:
-                intent_source = source_by_url.get(analysis.get("url"))
-                if intent_source is None:
-                    continue
-                intent_source.last_import_status = analysis.get("status")
-                intent_source.last_imported_at = now
-                intent_source.last_import_summary = analysis
-                intent_source.save(
-                    update_fields=("last_import_status", "last_imported_at", "last_import_summary")
-                )
+            planned_objects, plan_errors = _plan_analysis(result, source_by_url, now)
+            errors = [*plan_errors, *result.errors]
+            blocked = bool(errors) or any(obj.action == "conflict" for obj in planned_objects)
+            mode = "apply" if apply else "preview"
 
-            for service in result.desired_services:
-                source = service.get("intent_source") if isinstance(service.get("intent_source"), dict) else {}
-                intent_source = source_by_url.get(source.get("url"))
-                if intent_source is None:
-                    self.logger.warning("Skipping desired service without matching intent source: %s", _json(service))
-                    continue
+            attempted = False
+            committed = False
+            transaction_status = "not_requested"
+            transaction_error: str | None = None
+            confirmation_status = "not_applicable"
+            confirmation_mismatches: list[dict] = []
 
-                identity = desired_service_identity(service)
-
-                # Reject duplicate normalized dependency keys before any write for this
-                # service (p4/plan.md Step 4.3 item 4). Detecting duplicates only requires
-                # the incoming analysis, so this check runs before the transaction opens and
-                # before the service row itself is touched.
-                try:
-                    plan_dependency_sync(existing=[], service=service)
-                except ValueError as exc:
-                    self.logger.warning("Skipping desired service with malformed dependencies: %s (%s)", _json(service), exc)
-                    continue
-
-                with transaction.atomic():
+            if apply:
+                if blocked:
+                    transaction_status = "blocked"
+                else:
+                    attempted = True
                     try:
-                        service_obj = DesiredService.objects.select_for_update().get(
-                            intent_source=intent_source,
-                            catalog_namespace=identity["catalog_namespace"],
-                            catalog_metadata_name=identity["catalog_metadata_name"],
-                            service_type=identity["service_type"],
-                        )
-                        created = False
-                    except DesiredService.DoesNotExist:
-                        service_obj = DesiredService(
-                            intent_source=intent_source,
-                            **desired_service_create_defaults(service),
-                        )
-                        created = True
-
-                    if created:
-                        service_obj.last_analyzed_at = now
-                        service_obj.full_clean()
-                        service_obj.save()
-                        counts["services_created"] += 1
+                        with transaction.atomic():
+                            _apply_analysis(result, source_by_url, now)
+                    except Exception as exc:  # noqa: BLE001 - reported truthfully below
+                        transaction_status = "rolled_back"
+                        transaction_error = f"{exc.__class__.__name__}: {exc}"
                     else:
-                        update_fields = desired_service_update_fields(service)
-                        for field_name, value in update_fields.items():
-                            setattr(service_obj, field_name, value)
-                        service_obj.last_analyzed_at = now
-                        service_obj.save(update_fields=[*update_fields.keys(), "last_analyzed_at"])
-                        counts["services_updated"] += 1
+                        committed = True
+                        transaction_status = "committed"
+                        confirmation_mismatches = _confirm_analysis(result, source_by_url)
+                        confirmation_status = "confirmed" if not confirmation_mismatches else "mismatched"
 
-                    existing_rows = [
-                        {
-                            "dependency_kind": row.dependency_kind,
-                            "namespace": row.namespace,
-                            "name": row.name,
-                            "raw_ref": row.raw_ref,
-                            "dependency_type": row.dependency_type,
-                        }
-                        for row in service_obj.dependencies.all()
-                    ]
-                    # Duplicates were already rejected above; this second call only differs
-                    # by `existing` (real DB rows), which cannot introduce new duplicates.
-                    dependency_plan = plan_dependency_sync(existing=existing_rows, service=service)
-
-                    if dependency_plan["create"]:
-                        DesiredDependency.objects.bulk_create(
-                            DesiredDependency(source_service=service_obj, **dependency)
-                            for dependency in dependency_plan["create"]
-                        )
-                        counts["dependencies_created"] += len(dependency_plan["create"])
-
-                    for change in dependency_plan["update"]:
-                        kind, namespace, name = change["key"]
-                        DesiredDependency.objects.filter(
-                            source_service=service_obj,
-                            dependency_kind=kind,
-                            namespace=namespace,
-                            name=name,
-                        ).update(raw_ref=change["raw_ref"], dependency_type=change["dependency_type"])
-                    counts["dependencies_updated"] += len(dependency_plan["update"])
-
-                    if dependency_plan["delete_keys"]:
-                        for kind, namespace, name in dependency_plan["delete_keys"]:
-                            DesiredDependency.objects.filter(
-                                source_service=service_obj,
-                                dependency_kind=kind,
-                                namespace=namespace,
-                                name=name,
-                            ).delete()
-                        counts["dependencies_deleted"] += len(dependency_plan["delete_keys"])
-                    counts["dependencies_unchanged"] += len(dependency_plan["unchanged_keys"])
-
-            for error in result.errors:
+            artifact = build_analysis_artifact(
+                schema_version=ANALYSIS_SCHEMA_VERSION,
+                mode=mode,
+                selected_sources=[
+                    {"slug": s.slug, "url": s.url, "name": s.name, "enabled": s.enabled} for s in intent_sources
+                ],
+                inputs=_analysis_inputs(result),
+                objects=planned_objects,
+                errors=errors,
+                apply_requested=apply,
+                attempted=attempted,
+                committed=committed,
+                transaction_status=transaction_status,
+                transaction_error=transaction_error,
+                confirmation_status=confirmation_status,
+                confirmation_mismatches=confirmation_mismatches,
+            )
+            self.logger.info(
+                "Intent source analysis %s summary: %s", mode, _json(artifact["totals_by_model_and_action"])
+            )
+            for error in errors:
                 self.logger.warning(error)
-
-            self.logger.info("Desired service import summary: %s", _json(counts))
+            self.create_file(
+                ANALYSIS_ARTIFACT_FILENAME,
+                json.dumps(artifact, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
+            )
 
 
     class ReconcileDesiredIPAMIntent(Job):
@@ -497,7 +398,6 @@ else:
             self.logger.info("Desired IPAM reconcile summary: %s", _json(counts))
 
     jobs = (
-        PreviewIntentSourceAnalysis,
         ImportIntentSources,
         AnalyzeIntentSources,
         ReconcileDesiredIPAMIntent,
@@ -664,6 +564,239 @@ def _entry_from_intent_source(intent_source) -> IntentSourceEntry:
         basic_file_paths=list(source_config.get("basic_file_paths") or []),
         raw_url_template=source_config.get("raw_url_template"),
     )
+
+
+def _analysis_inputs(result) -> list[dict]:
+    """Bounded input evidence for the Analyze artifact -- URL/ref/path/status, no credentials
+    (plan Section 6.2)."""
+
+    return [
+        {
+            "url": analysis.get("url"),
+            "ref": analysis.get("ref"),
+            "catalog_path": analysis.get("catalog_path"),
+            "status": analysis.get("status"),
+        }
+        for analysis in result.source_analyses
+    ]
+
+
+def _plan_analysis(result, source_by_url: dict, now) -> tuple[list, list[str]]:
+    """Build the complete read-only Analyze plan (plan Section 6.2). Never calls
+    `save()`/`update()`/`delete()`/`bulk_create()`."""
+
+    planned: list = []
+    errors: list[str] = []
+
+    for analysis in result.source_analyses:
+        intent_source = source_by_url.get(analysis.get("url"))
+        if intent_source is None:
+            continue
+        identity = {"slug": intent_source.slug}
+        fields = {
+            "last_import_status": analysis.get("status"),
+            "last_imported_at": _json_safe(now),
+            "last_import_summary": _json_safe(analysis),
+        }
+        existing = {
+            "last_import_status": intent_source.last_import_status,
+            "last_imported_at": _json_safe(intent_source.last_imported_at),
+            "last_import_summary": _json_safe(intent_source.last_import_summary),
+        }
+        planned.append(
+            plan_upsert(
+                model="IntentSource",
+                root="intent_sources",
+                identity=identity,
+                create_fields=fields,
+                update_fields=fields,
+                existing_matches=[existing],
+            )
+        )
+
+    for service in result.desired_services:
+        source = service.get("intent_source") if isinstance(service.get("intent_source"), dict) else {}
+        intent_source = source_by_url.get(source.get("url"))
+        if intent_source is None:
+            errors.append(f"desired service references unknown intent_source url: {source.get('url')!r}")
+            continue
+
+        base_identity = desired_service_identity(service)
+        try:
+            plan_dependency_sync(existing=[], service=service)
+        except ValueError as exc:
+            errors.append(f"malformed dependencies for desired service {base_identity}: {exc}")
+            continue
+
+        identity = {"intent_source": intent_source.slug, **base_identity}
+        create_fields = desired_service_create_defaults(service)
+        update_fields = desired_service_update_fields(service)
+        existing_obj = DesiredService.objects.filter(
+            intent_source=intent_source,
+            catalog_namespace=base_identity["catalog_namespace"],
+            catalog_metadata_name=base_identity["catalog_metadata_name"],
+            service_type=base_identity["service_type"],
+        ).first()
+        existing_row = (
+            {key: _json_safe(getattr(existing_obj, key)) for key in create_fields}
+            if existing_obj is not None
+            else None
+        )
+        planned.append(
+            plan_upsert(
+                model="DesiredService",
+                root="desired_services",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(update_fields),
+                existing_matches=[existing_row] if existing_row else [],
+            )
+        )
+
+        existing_dependency_rows = []
+        if existing_obj is not None:
+            existing_dependency_rows = [
+                {
+                    "dependency_kind": row.dependency_kind,
+                    "namespace": row.namespace,
+                    "name": row.name,
+                    "raw_ref": row.raw_ref,
+                    "dependency_type": row.dependency_type,
+                }
+                for row in existing_obj.dependencies.all()
+            ]
+        dependency_plan = plan_dependency_sync(existing=existing_dependency_rows, service=service)
+        planned.extend(
+            dependency_planned_objects(
+                desired_service_identity=identity,
+                dependency_plan=dependency_plan,
+                scope_complete=is_dependency_scope_complete(service),
+            )
+        )
+
+    return planned, errors
+
+
+def _apply_analysis(result, source_by_url: dict, now) -> None:
+    """Apply an already-plan-validated Analyze run inside the caller's `transaction.atomic()`.
+
+    Only called when `_plan_analysis()` reported zero conflicts/errors, so a `DoesNotExist`/
+    `full_clean()` failure here is a genuine precondition-changed-since-plan race and propagates
+    to abort/roll back the whole transaction.
+    """
+
+    for analysis in result.source_analyses:
+        intent_source = source_by_url.get(analysis.get("url"))
+        if intent_source is None:
+            continue
+        intent_source.last_import_status = analysis.get("status")
+        intent_source.last_imported_at = now
+        intent_source.last_import_summary = analysis
+        intent_source.full_clean()
+        intent_source.save(update_fields=("last_import_status", "last_imported_at", "last_import_summary"))
+
+    for service in result.desired_services:
+        source = service.get("intent_source") if isinstance(service.get("intent_source"), dict) else {}
+        intent_source = source_by_url.get(source.get("url"))
+        if intent_source is None:
+            continue
+
+        identity = desired_service_identity(service)
+        try:
+            plan_dependency_sync(existing=[], service=service)
+        except ValueError:
+            continue  # already reported and blocked by _plan_analysis; unreachable here
+
+        try:
+            service_obj = DesiredService.objects.select_for_update().get(
+                intent_source=intent_source,
+                catalog_namespace=identity["catalog_namespace"],
+                catalog_metadata_name=identity["catalog_metadata_name"],
+                service_type=identity["service_type"],
+            )
+            created = False
+        except DesiredService.DoesNotExist:
+            service_obj = DesiredService(intent_source=intent_source, **desired_service_create_defaults(service))
+            created = True
+
+        if created:
+            service_obj.last_analyzed_at = now
+            service_obj.full_clean()
+            service_obj.save()
+        else:
+            update_fields = desired_service_update_fields(service)
+            for field_name, value in update_fields.items():
+                setattr(service_obj, field_name, value)
+            service_obj.last_analyzed_at = now
+            service_obj.full_clean()
+            service_obj.save(update_fields=[*update_fields.keys(), "last_analyzed_at"])
+
+        existing_rows = [
+            {
+                "dependency_kind": row.dependency_kind,
+                "namespace": row.namespace,
+                "name": row.name,
+                "raw_ref": row.raw_ref,
+                "dependency_type": row.dependency_type,
+            }
+            for row in service_obj.dependencies.all()
+        ]
+        dependency_plan = plan_dependency_sync(existing=existing_rows, service=service)
+        scope_complete = is_dependency_scope_complete(service)
+
+        if dependency_plan["create"]:
+            DesiredDependency.objects.bulk_create(
+                DesiredDependency(source_service=service_obj, **dependency)
+                for dependency in dependency_plan["create"]
+            )
+
+        for change in dependency_plan["update"]:
+            kind, namespace, name = change["key"]
+            DesiredDependency.objects.filter(
+                source_service=service_obj, dependency_kind=kind, namespace=namespace, name=name,
+            ).update(raw_ref=change["raw_ref"], dependency_type=change["dependency_type"])
+
+        if scope_complete and dependency_plan["delete_keys"]:
+            for kind, namespace, name in dependency_plan["delete_keys"]:
+                DesiredDependency.objects.filter(
+                    source_service=service_obj, dependency_kind=kind, namespace=namespace, name=name,
+                ).delete()
+
+
+def _confirm_analysis(result, source_by_url: dict) -> list[dict]:
+    """Refetch every planned DesiredService post-commit and confirm the committed analysis-owned
+    values (plan Section 6.3 item 8)."""
+
+    mismatches: list[dict] = []
+    for service in result.desired_services:
+        source = service.get("intent_source") if isinstance(service.get("intent_source"), dict) else {}
+        intent_source = source_by_url.get(source.get("url"))
+        if intent_source is None:
+            continue
+        identity = desired_service_identity(service)
+        try:
+            obj = DesiredService.objects.get(
+                intent_source=intent_source,
+                catalog_namespace=identity["catalog_namespace"],
+                catalog_metadata_name=identity["catalog_metadata_name"],
+                service_type=identity["service_type"],
+            )
+        except DesiredService.DoesNotExist:
+            mismatches.append({"model": "DesiredService", "identity": identity, "reason": "not_found"})
+            continue
+        expected = desired_service_update_fields(service)
+        for key, value in expected.items():
+            if getattr(obj, key) != value:
+                mismatches.append(
+                    {
+                        "model": "DesiredService",
+                        "identity": identity,
+                        "field": key,
+                        "expected": _json_safe(value),
+                        "actual": _json_safe(getattr(obj, key)),
+                    }
+                )
+    return mismatches
 
 
 def _import_source_info(load_result) -> dict:

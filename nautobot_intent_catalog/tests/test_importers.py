@@ -799,5 +799,128 @@ class ImportPlanEngineTests(unittest.TestCase):
         self.assertFalse(hasattr(existing_matches[0], "save"))
 
 
+class AnalysisPlanArtifactTests(unittest.TestCase):
+    """Plan.md Section 6.4/Step 5: the Analyze artifact has its own shape (no `scope`/`source`,
+    `selected_sources`/`inputs` and `totals_by_model_and_action` instead of a flat `totals`), a
+    dependency `delete` action names the owning service, and a conflict is reported separately
+    from `objects`."""
+
+    def test_totals_by_model_and_action_groups_by_model(self) -> None:
+        from nautobot_intent_catalog.import_plan import PlannedObject, totals_by_model_and_action
+
+        objects = [
+            PlannedObject(model="DesiredService", root="desired_services", identity={}, action="create"),
+            PlannedObject(model="DesiredService", root="desired_services", identity={}, action="update"),
+            PlannedObject(model="DesiredDependency", root="desired_dependencies", identity={}, action="delete"),
+        ]
+
+        self.assertEqual(
+            totals_by_model_and_action(objects),
+            {
+                "DesiredService": {"create": 1, "update": 1, "delete": 0, "unchanged": 0, "conflict": 0},
+                "DesiredDependency": {"create": 0, "update": 0, "delete": 1, "unchanged": 0, "conflict": 0},
+            },
+        )
+
+    def test_build_analysis_artifact_shape_and_dependency_delete_identity(self) -> None:
+        from nautobot_intent_catalog.import_plan import PlannedObject, build_analysis_artifact
+
+        dependency_delete = PlannedObject(
+            model="DesiredDependency",
+            root="desired_dependencies",
+            identity={
+                "desired_service": {"catalog_metadata_name": "prometheus"},
+                "dependency_kind": "component",
+                "namespace": "default",
+                "name": "grafana",
+            },
+            action="delete",
+        )
+        artifact = build_analysis_artifact(
+            schema_version="nintent.intent-analysis.v1",
+            mode="preview",
+            selected_sources=[{"slug": "infrastructure"}],
+            inputs=[{"url": "https://example.invalid/repo"}],
+            objects=[dependency_delete],
+            errors=[],
+            apply_requested=False,
+            attempted=False,
+            committed=False,
+            transaction_status="not_requested",
+            transaction_error=None,
+            confirmation_status="not_applicable",
+            confirmation_mismatches=[],
+        )
+
+        self.assertNotIn("scope", artifact)
+        self.assertNotIn("source", artifact)
+        self.assertEqual(artifact["selected_sources"], [{"slug": "infrastructure"}])
+        self.assertEqual(len(artifact["objects"]), 1)
+        deleted = artifact["objects"][0]
+        self.assertEqual(deleted["action"], "delete")
+        self.assertEqual(deleted["identity"]["name"], "grafana")
+        self.assertEqual(
+            deleted["identity"]["desired_service"],
+            {"catalog_metadata_name": "prometheus"},
+        )
+        self.assertEqual(
+            artifact["totals_by_model_and_action"]["DesiredDependency"]["delete"],
+            1,
+        )
+
+    def test_build_analysis_artifact_reports_conflicts_separately(self) -> None:
+        from nautobot_intent_catalog.import_plan import PlannedObject, build_analysis_artifact
+
+        conflict = PlannedObject(
+            model="DesiredService",
+            root="desired_services",
+            identity={"catalog_metadata_name": "prometheus"},
+            action="conflict",
+            conflict_reason="malformed dependency reference",
+        )
+        artifact = build_analysis_artifact(
+            schema_version="nintent.intent-analysis.v1",
+            mode="preview",
+            selected_sources=[],
+            inputs=[],
+            objects=[conflict],
+            errors=[],
+            apply_requested=False,
+            attempted=False,
+            committed=False,
+            transaction_status="not_requested",
+            transaction_error=None,
+            confirmation_status="not_applicable",
+            confirmation_mismatches=[],
+        )
+
+        self.assertEqual(artifact["objects"], [])
+        self.assertEqual(len(artifact["conflicts"]), 1)
+        self.assertEqual(artifact["conflicts"][0]["reason"], "malformed dependency reference")
+
+
+class DependencyScopeCompletenessTests(unittest.TestCase):
+    """Plan.md Section 6.2/6.3: a dependency delete is only planned when the service's own
+    analysis was successful and complete -- malformed dependencies on that service must never
+    trigger deletion of retained dependency rows for the same service."""
+
+    def test_service_with_malformed_dependencies_is_not_a_complete_scope(self) -> None:
+        from nautobot_intent_catalog.analysis_plan import is_dependency_scope_complete
+
+        service = {"analysis": {"status": "catalog_derived", "malformed_dependencies": [{"kind": "bad"}]}}
+        self.assertFalse(is_dependency_scope_complete(service))
+
+    def test_service_without_malformed_dependencies_is_complete(self) -> None:
+        from nautobot_intent_catalog.analysis_plan import is_dependency_scope_complete
+
+        service = {"analysis": {"status": "catalog_derived"}}
+        self.assertTrue(is_dependency_scope_complete(service))
+
+    def test_missing_analysis_block_is_not_complete(self) -> None:
+        from nautobot_intent_catalog.analysis_plan import is_dependency_scope_complete
+
+        self.assertFalse(is_dependency_scope_complete({}))
+
+
 if __name__ == "__main__":
     unittest.main()

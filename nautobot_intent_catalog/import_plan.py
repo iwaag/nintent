@@ -191,5 +191,73 @@ def build_artifact(
     }
 
 
+def totals_by_model_and_action(objects: list[PlannedObject]) -> dict[str, dict[str, int]]:
+    result: dict[str, dict[str, int]] = {}
+    for obj in objects:
+        per_model = result.setdefault(obj.model, {"create": 0, "update": 0, "delete": 0, "unchanged": 0, "conflict": 0})
+        per_model[obj.action] += 1
+    return result
+
+
+def build_analysis_artifact(
+    *,
+    schema_version: str,
+    mode: str,
+    selected_sources: list[dict[str, Any]],
+    inputs: list[dict[str, Any]],
+    objects: list[PlannedObject],
+    errors: list[str],
+    apply_requested: bool,
+    attempted: bool,
+    committed: bool,
+    transaction_status: str,
+    transaction_error: str | None,
+    confirmation_status: str,
+    confirmation_mismatches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Assemble the one deterministic, versioned Analyze artifact shape (plan Section 6.4).
+
+    Deliberately a different top-level shape than `build_artifact()` (Import): no `scope`/
+    `source`, `selected_sources`/`inputs` instead, and `totals_by_model_and_action` instead of a
+    flat `totals`. Per-object dicts omit `root` (not part of the Analyze artifact contract).
+    """
+
+    ordered_objects = sorted(objects, key=lambda obj: (obj.model, _identity_sort_key(obj.identity)))
+    conflicts = [
+        {"model": obj.model, "identity": obj.identity, "action": obj.action, "reason": obj.conflict_reason}
+        for obj in ordered_objects
+        if obj.action == "conflict"
+    ]
+    non_conflicts = [
+        {
+            "model": obj.model,
+            "identity": obj.identity,
+            "action": obj.action,
+            "changed_fields": obj.changed_fields,
+            "preserved_fields": obj.preserved_fields,
+        }
+        for obj in ordered_objects
+        if obj.action != "conflict"
+    ]
+
+    return {
+        "schema_version": schema_version,
+        "mode": mode,
+        "selected_sources": selected_sources,
+        "inputs": inputs,
+        "objects": non_conflicts,
+        "conflicts": conflicts,
+        "errors": list(errors),
+        "totals_by_model_and_action": totals_by_model_and_action(ordered_objects),
+        "writes": {
+            "requested": apply_requested,
+            "attempted": attempted,
+            "committed": committed,
+        },
+        "transaction": {"status": transaction_status, "error": transaction_error},
+        "confirmation": {"status": confirmation_status, "mismatches": confirmation_mismatches},
+    }
+
+
 def _identity_sort_key(identity: dict[str, Any]) -> tuple:
     return tuple(sorted((str(k), str(v)) for k, v in identity.items()))
