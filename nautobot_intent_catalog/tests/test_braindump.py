@@ -13,7 +13,7 @@ try:
 
     from django.core.exceptions import ValidationError
     from django.db import IntegrityError, transaction
-    from django.urls import reverse
+    from django.urls import NoReverseMatch, reverse
     from rest_framework import status
 
     from nautobot.core.testing import TestCase
@@ -132,17 +132,22 @@ else:
 
 
     class BrainDumpViewTests(TestCase):
-        """UI route, form, escaping, and review-workflow coverage."""
+        """Read-only UI route, panel-separation, escaping, and absence coverage.
+
+        Interface Contract Phase 4 Step 1: the six cases below (`test_add_view_initial_authorship_
+        is_user_direct`, `test_add_edit_delete_round_trip_and_agent_transcribed_selectable`,
+        `test_review_add_binds_parent_and_returns_to_braindump`, `test_review_add_with_existing_
+        review_redirects_to_edit_without_creating_a_second_row`, `test_review_edit_updates_summary_
+        and_returns_to_braindump`, `test_review_delete_leaves_braindump_unreviewed_and_returns_to_it`)
+        reversed and exercised deleted Braindump/Alignment Review add/edit/delete routes. Phase 3
+        deleted those routes/views/forms; this class now proves their absence and that the retained
+        read-only pages cannot mutate, instead of exercising mutation UI that no longer exists.
+        REST CRUD coverage for the same models lives in `BrainDumpAPITests` below, unchanged.
+        """
 
         user_permissions = (
             "nautobot_intent_catalog.view_braindumpdocument",
-            "nautobot_intent_catalog.add_braindumpdocument",
-            "nautobot_intent_catalog.change_braindumpdocument",
-            "nautobot_intent_catalog.delete_braindumpdocument",
             "nautobot_intent_catalog.view_alignmentreview",
-            "nautobot_intent_catalog.add_alignmentreview",
-            "nautobot_intent_catalog.change_alignmentreview",
-            "nautobot_intent_catalog.delete_alignmentreview",
         )
 
         def test_list_view_shows_braindump(self):
@@ -163,6 +168,13 @@ else:
             self.assertContains(response, "AI Alignment Review")
             self.assertContains(response, "Unreviewed")
 
+        def test_detail_view_shows_reviewed_panel_content(self):
+            braindump = _make_braindump()
+            AlignmentReview.objects.create(braindump=braindump, summary="Looks aligned.")
+            response = self.client.get(braindump.get_absolute_url())
+            self.assertContains(response, "Looks aligned.")
+            self.assertNotContains(response, "Unreviewed")
+
         def test_detail_view_escapes_script_and_html_looking_content(self):
             braindump = _make_braindump(
                 title="<script>alert(1)</script>",
@@ -179,72 +191,73 @@ else:
             self.assertIn("&lt;script&gt;alert(2)&lt;/script&gt;", content)
             self.assertIn("{{ template_injection }}", content)  # inert literal text, not re-evaluated
 
-        def test_add_view_initial_authorship_is_user_direct(self):
-            response = self.client.get(reverse("plugins:nautobot_intent_catalog:braindumpdocument_add"))
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.context["form"].fields["authorship"].initial, "user_direct")
-
-        def test_add_edit_delete_round_trip_and_agent_transcribed_selectable(self):
-            add_url = reverse("plugins:nautobot_intent_catalog:braindumpdocument_add")
-            response = self.client.post(
-                add_url, {"title": "New Braindump", "body": "Body one", "authorship": "agent_transcribed"}
-            )
-            braindump = BrainDumpDocument.objects.get(title="New Braindump")
-            self.assertEqual(braindump.authorship, "agent_transcribed")
-
-            edit_url = reverse("plugins:nautobot_intent_catalog:braindumpdocument_edit", kwargs={"pk": braindump.pk})
-            self.client.post(
-                edit_url, {"title": "New Braindump", "body": "Body two", "authorship": "agent_transcribed"}
-            )
-            braindump.refresh_from_db()
-            self.assertEqual(braindump.body, "Body two")
-
-            delete_url = reverse(
-                "plugins:nautobot_intent_catalog:braindumpdocument_delete", kwargs={"pk": braindump.pk}
-            )
-            self.client.post(delete_url, {"confirm": "True"})
-            self.assertFalse(BrainDumpDocument.objects.filter(pk=braindump.pk).exists())
-
-        def test_review_add_binds_parent_and_returns_to_braindump(self):
+        def test_detail_view_has_no_mutation_control(self):
             braindump = _make_braindump()
-            add_url = reverse(
-                "plugins:nautobot_intent_catalog:alignmentreview_add", kwargs={"braindump_pk": braindump.pk}
-            )
-            response = self.client.post(add_url, {"summary": "Agent reply"})
-            review = AlignmentReview.objects.get(braindump=braindump)
-            self.assertEqual(review.summary, "Agent reply")
-            self.assertRedirects(response, braindump.get_absolute_url())
+            AlignmentReview.objects.create(braindump=braindump, summary="x")
+            response = self.client.get(braindump.get_absolute_url())
+            content = response.content.decode()
+            for needle in (
+                'type="submit"',
+                "csrf_token",
+                "Add Alignment Review",
+                "Edit",
+                "Delete",
+            ):
+                self.assertNotIn(needle, content)
 
-        def test_review_add_with_existing_review_redirects_to_edit_without_creating_a_second_row(self):
-            braindump = _make_braindump()
-            review = AlignmentReview.objects.create(braindump=braindump, summary="first")
-            add_url = reverse(
-                "plugins:nautobot_intent_catalog:alignmentreview_add", kwargs={"braindump_pk": braindump.pk}
-            )
-            response = self.client.get(add_url)
-            self.assertRedirects(
-                response,
-                reverse("plugins:nautobot_intent_catalog:alignmentreview_edit", kwargs={"pk": review.pk}),
-            )
-            self.assertEqual(AlignmentReview.objects.filter(braindump=braindump).count(), 1)
+        def test_removed_braindump_and_review_routes_do_not_reverse(self):
+            removed_names = [
+                "braindumpdocument_add",
+                "braindumpdocument_edit",
+                "braindumpdocument_delete",
+                "alignmentreview_add",
+                "alignmentreview_edit",
+                "alignmentreview_delete",
+            ]
+            dummy_pk = "00000000-0000-0000-0000-000000000000"
+            for name in removed_names:
+                with self.subTest(name=name):
+                    with self.assertRaises(NoReverseMatch):
+                        if name == "alignmentreview_add":
+                            reverse(
+                                f"plugins:nautobot_intent_catalog:{name}", kwargs={"braindump_pk": dummy_pk}
+                            )
+                        elif name.endswith(("_edit", "_delete")):
+                            reverse(f"plugins:nautobot_intent_catalog:{name}", kwargs={"pk": dummy_pk})
+                        else:
+                            reverse(f"plugins:nautobot_intent_catalog:{name}")
 
-        def test_review_edit_updates_summary_and_returns_to_braindump(self):
-            braindump = _make_braindump()
-            review = AlignmentReview.objects.create(braindump=braindump, summary="v1")
-            edit_url = reverse("plugins:nautobot_intent_catalog:alignmentreview_edit", kwargs={"pk": review.pk})
-            response = self.client.post(edit_url, {"summary": "v2"})
-            review.refresh_from_db()
-            self.assertEqual(review.summary, "v2")
-            self.assertRedirects(response, braindump.get_absolute_url())
-
-        def test_review_delete_leaves_braindump_unreviewed_and_returns_to_it(self):
+        def test_former_literal_mutation_paths_return_404(self):
             braindump = _make_braindump()
             review = AlignmentReview.objects.create(braindump=braindump, summary="x")
-            delete_url = reverse("plugins:nautobot_intent_catalog:alignmentreview_delete", kwargs={"pk": review.pk})
-            response = self.client.post(delete_url, {"confirm": "True"})
-            self.assertRedirects(response, braindump.get_absolute_url())
-            self.assertFalse(AlignmentReview.objects.filter(pk=review.pk).exists())
-            self.assertTrue(BrainDumpDocument.objects.filter(pk=braindump.pk).exists())
+            for path in (
+                "/plugins/intent-catalog/braindumps/add/",
+                f"/plugins/intent-catalog/braindumps/{braindump.pk}/edit/",
+                f"/plugins/intent-catalog/braindumps/{braindump.pk}/delete/",
+                f"/plugins/intent-catalog/braindumps/{braindump.pk}/reviews/add/",
+                f"/plugins/intent-catalog/alignment-reviews/{review.pk}/edit/",
+                f"/plugins/intent-catalog/alignment-reviews/{review.pk}/delete/",
+            ):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get(path).status_code, 404)
+                    self.assertEqual(self.client.post(path, {}).status_code, 404)
+
+        def test_post_to_list_and_detail_pages_does_not_mutate(self):
+            braindump = _make_braindump(title="Untouched", body="Untouched body")
+            before_count = BrainDumpDocument.objects.count()
+            list_url = reverse("plugins:nautobot_intent_catalog:braindumpdocument_list")
+            detail_url = braindump.get_absolute_url()
+
+            list_response = self.client.post(list_url, {"title": "mutation-attempt"})
+            self.assertIn(list_response.status_code, (405, 200))
+            detail_response = self.client.post(detail_url, {"title": "mutation-attempt"})
+            self.assertIn(detail_response.status_code, (405, 200))
+
+            braindump.refresh_from_db()
+            self.assertEqual(braindump.title, "Untouched")
+            self.assertEqual(braindump.body, "Untouched body")
+            self.assertEqual(BrainDumpDocument.objects.count(), before_count)
+            self.assertFalse(AlignmentReview.objects.filter(braindump=braindump).exists())
 
 
     class BrainDumpAPITests(APITestCase):

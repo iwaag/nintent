@@ -181,9 +181,187 @@ if HAS_DJANGO:
 
         def test_node_disallowed_methods_return_405(self):
             list_url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-list")
-            
+
             res_post = self.client.post(list_url, {"name": "test-node", "slug": "test-node"}, format="json", **self.header)
             self.assertEqual(res_post.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
             res_delete_list = self.client.delete(list_url, **self.header)
             self.assertEqual(res_delete_list.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+    class RESTMethodFieldMatrixTests(APITestCase):
+        """Complete frozen route/method/response-field/writable-field/invalid-input/zero-write
+        matrix for the three retained REST collections (Phase 4 Step 1 item 6)."""
+
+        def setUp(self):
+            super().setUp()
+            self.add_permissions(
+                "nautobot_intent_catalog.view_desirednode",
+                "nautobot_intent_catalog.change_desirednode",
+                "nautobot_intent_catalog.view_braindumpdocument",
+                "nautobot_intent_catalog.add_braindumpdocument",
+                "nautobot_intent_catalog.change_braindumpdocument",
+                "nautobot_intent_catalog.delete_braindumpdocument",
+                "nautobot_intent_catalog.view_alignmentreview",
+                "nautobot_intent_catalog.add_alignmentreview",
+                "nautobot_intent_catalog.change_alignmentreview",
+                "nautobot_intent_catalog.delete_alignmentreview",
+            )
+
+        def test_desired_node_response_fields_are_exact(self):
+            node = models.DesiredNode.objects.create(name="n1", slug="n1")
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            response = self.client.get(url, **self.header)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                set(response.data.keys()),
+                {
+                    "id", "name", "slug", "node_type", "lifecycle", "role",
+                    "realized_device", "realized_device_source", "created", "last_updated",
+                },
+            )
+
+        def test_desired_node_patch_allowed_field_succeeds(self):
+            node = models.DesiredNode.objects.create(name="n2", slug="n2", lifecycle="active")
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            response = self.client.patch(url, {"lifecycle": "deprecated"}, format="json", **self.header)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            node.refresh_from_db()
+            self.assertEqual(node.lifecycle, "deprecated")
+
+        def test_desired_node_patch_unknown_field_rejected_with_zero_write(self):
+            node = models.DesiredNode.objects.create(name="n3", slug="n3", lifecycle="active")
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            response = self.client.patch(url, {"name": "renamed"}, format="json", **self.header)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            node.refresh_from_db()
+            self.assertEqual(node.name, "n3")
+
+        def test_desired_node_patch_invalid_lifecycle_rejected_with_zero_write(self):
+            node = models.DesiredNode.objects.create(name="n4", slug="n4", lifecycle="active")
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            response = self.client.patch(url, {"lifecycle": "not-a-real-choice"}, format="json", **self.header)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            node.refresh_from_db()
+            self.assertEqual(node.lifecycle, "active")
+
+        def test_desired_node_patch_inconsistent_link_source_rejected_with_zero_write(self):
+            node = models.DesiredNode.objects.create(name="n5", slug="n5", lifecycle="active")
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            response = self.client.patch(url, {"realized_device_source": "derived"}, format="json", **self.header)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            node.refresh_from_db()
+            self.assertIsNone(node.realized_device_id)
+            self.assertIsNone(node.realized_device_source)
+
+        def test_desired_node_full_put_delete_and_bulk_patch_return_405(self):
+            node = models.DesiredNode.objects.create(name="n6", slug="n6", lifecycle="active")
+            detail_url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
+            list_url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-list")
+            self.assertEqual(
+                self.client.put(detail_url, {"lifecycle": "active"}, format="json", **self.header).status_code,
+                status.HTTP_405_METHOD_NOT_ALLOWED,
+            )
+            self.assertEqual(self.client.delete(detail_url, **self.header).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+            self.assertEqual(
+                self.client.patch(list_url, [{"lifecycle": "active"}], format="json", **self.header).status_code,
+                status.HTTP_405_METHOD_NOT_ALLOWED,
+            )
+            node.refresh_from_db()
+            self.assertEqual(node.lifecycle, "active")
+
+        def test_braindump_and_review_put_and_bulk_operations_return_405(self):
+            braindump = models.BrainDumpDocument.objects.create(title="t", body="b", authorship="user_direct")
+            review = models.AlignmentReview.objects.create(braindump=braindump, summary="s")
+            for viewset_name, obj in (("braindumpdocument", braindump), ("alignmentreview", review)):
+                detail_url = reverse(f"plugins-api:nautobot_intent_catalog-api:{viewset_name}-detail", kwargs={"pk": obj.pk})
+                list_url = reverse(f"plugins-api:nautobot_intent_catalog-api:{viewset_name}-list")
+                with self.subTest(viewset=viewset_name):
+                    self.assertEqual(
+                        self.client.put(detail_url, {}, format="json", **self.header).status_code,
+                        status.HTTP_405_METHOD_NOT_ALLOWED,
+                    )
+                    self.assertEqual(
+                        self.client.patch(list_url, [{}], format="json", **self.header).status_code,
+                        status.HTTP_405_METHOD_NOT_ALLOWED,
+                    )
+                    self.assertEqual(self.client.delete(list_url, **self.header).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+        def test_braindump_patch_unknown_field_rejected_with_zero_write(self):
+            braindump = models.BrainDumpDocument.objects.create(title="orig", body="orig-body", authorship="user_direct")
+            detail_url = reverse("plugins-api:nautobot_intent_catalog-api:braindumpdocument-detail", kwargs={"pk": braindump.pk})
+            response = self.client.patch(
+                detail_url, {"created": "2020-01-01T00:00:00Z"}, format="json", **self.header
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            braindump.refresh_from_db()
+            self.assertEqual(braindump.title, "orig")
+
+        def test_review_patch_unknown_field_rejected_with_zero_write(self):
+            braindump = models.BrainDumpDocument.objects.create(title="t2", body="b2", authorship="user_direct")
+            review = models.AlignmentReview.objects.create(braindump=braindump, summary="orig-summary")
+            detail_url = reverse(
+                "plugins-api:nautobot_intent_catalog-api:alignmentreview-detail", kwargs={"pk": review.pk}
+            )
+            response = self.client.patch(
+                detail_url, {"braindump": str(braindump.pk), "summary": "new"}, format="json", **self.header
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            review.refresh_from_db()
+            self.assertEqual(review.summary, "orig-summary")
+
+
+    class GraphQLContractTests(APITestCase):
+        """IntentSource GraphQL roots fail schema validation; retained roots query successfully
+        (Phase 4 Step 1 item 7)."""
+
+        def setUp(self):
+            super().setUp()
+            self.add_permissions(
+                "nautobot_intent_catalog.view_desirednode",
+                "nautobot_intent_catalog.view_desiredendpoint",
+                "nautobot_intent_catalog.view_desirediprange",
+                "nautobot_intent_catalog.view_desiredservice",
+                "nautobot_intent_catalog.view_desireddependency",
+                "nautobot_intent_catalog.view_desiredserviceplacement",
+                "nautobot_intent_catalog.view_desiredcomputeplatform",
+                "nautobot_intent_catalog.view_desiredcomputeinstance",
+                "nautobot_intent_catalog.view_desirednodeoperationaloverride",
+                "nautobot_intent_catalog.view_braindumpdocument",
+                "nautobot_intent_catalog.view_alignmentreview",
+            )
+            self.api_url = reverse("graphql-api")
+
+        def test_intent_source_singular_and_plural_queries_fail_schema_validation(self):
+            for query in (
+                'query { intent_source(id: "00000000-0000-0000-0000-000000000000") { id } }',
+                "query { intent_sources { id } }",
+            ):
+                with self.subTest(query=query):
+                    response = self.client.post(self.api_url, {"query": query}, format="json", **self.header)
+                    self.assertEqual(response.status_code, status.HTTP_200_OK)
+                    self.assertTrue(response.data.get("errors"))
+                    self.assertFalse(response.data.get("data"))
+
+        def test_every_retained_root_queries_successfully(self):
+            node = models.DesiredNode.objects.create(name="gqln", slug="gqln")
+            query = """
+            query {
+              desired_nodes { id name slug }
+              desired_endpoints { id }
+              desired_ip_ranges { id }
+              desired_services { id }
+              desired_dependencies { id }
+              desired_service_placements { id }
+              desired_compute_platforms { id }
+              desired_compute_instances { id }
+              desired_node_operational_overrides { id }
+              braindump_documents { id }
+              alignment_reviews { id }
+            }
+            """
+            response = self.client.post(self.api_url, {"query": query}, format="json", **self.header)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertNotIn("errors", response.data)
+            names = {row["name"] for row in response.data["data"]["desired_nodes"]}
+            self.assertIn("gqln", names)

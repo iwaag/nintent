@@ -100,10 +100,12 @@ write because the default detail template is missing.
 Keep `tests/test_templates.py` in sync with every default-template `ObjectView`;
 it catches missing detail templates without a Nautobot runtime.
 
-On Nautobot 3.1.x, `ButtonsColumn` includes a changelog action by default. If a
-model does not provide a changelog URL/view, pass an explicit button set such as
-`buttons=("edit", "delete")`. Also check related `tables.LinkColumn()` fields:
-linked models need working `get_absolute_url()` targets and detail templates.
+Interface Contract Phase 3 deleted every nintent `ObjectEditView`, `ObjectDeleteView`, `FormView`,
+`ButtonsColumn`, and `ToggleColumn`; `tables.py` defines only read-only list tables now (see
+`tests/test_ui_contract.py::UIContractManifestTests.test_tables_have_no_action_or_toggle_columns`).
+Do not reintroduce `ButtonsColumn`/`ToggleColumn`/`TABLE_ACTION_BUTTONS` or a mutation view for a
+nintent model. `tables.LinkColumn()` fields still need working `get_absolute_url()` targets and
+detail templates, since those remain read-only navigation, not mutation, affordances.
 
 ## Nautobot Model Compatibility
 
