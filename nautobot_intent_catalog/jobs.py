@@ -18,6 +18,8 @@ from .importers import (
     desired_service_update_fields,
     desired_service_entry_defaults,
     desired_service_entry_identity,
+    desired_service_entry_locked_fields,
+    desired_service_entry_update_fields,
     desired_service_identity,
     desired_service_placement_defaults,
     desired_service_placement_identity,
@@ -27,12 +29,17 @@ from .importers import (
     desired_ip_range_identity,
     desired_node_defaults,
     desired_node_identity,
+    desired_node_update_fields,
     intent_source_defaults,
     plan_dependency_sync,
 )
+from .import_plan import CANONICAL_IMPORT_ROOTS, build_artifact, plan_upsert, unresolved_reference
 from .loaders import IntentSourceEntry
 from .loaders import load_default_intent_sources, load_intent_sources
 from .intent_contract import require_unique_reference
+
+IMPORT_SCHEMA_VERSION = "nintent.intent-import.v1"
+IMPORT_ARTIFACT_FILENAME = "intent-import-result.json"
 
 try:
     from django.conf import settings
@@ -119,22 +126,22 @@ else:
 
 
     class ImportIntentSources(Job):
-        """Import intent source inputs from configured YAML into DB models."""
+        """Import intent source inputs from configured YAML into DB models.
+
+        Defaults to a zero-write preview (plan Section 5). The read-only plan
+        (`_plan_import`) and the atomic applier (`_apply_import`) are separate functions so
+        `apply=false` structurally cannot invoke a mutation method.
+        """
 
         source_file = StringVar(
             default="",
             description="Optional path to intent_sources.yaml. Empty uses App configuration.",
         )
-        disable_missing = BooleanVar(
-            default=False,
-            description="Disable existing DB intent sources that are not present in the YAML input.",
-        )
-        preview = BooleanVar(
+        apply = BooleanVar(
             default=False,
             description=(
-                "Compute the exact per-object create/update/unchanged diff and always roll back. "
-                "Makes zero committed writes regardless of disable_missing or a future commit "
-                "default, independent of any UI checkbox state."
+                "Commit the plan atomically. Preview (apply=false, the default) performs zero "
+                "database writes and always emits the same versioned artifact shape."
             ),
         )
 
@@ -143,7 +150,7 @@ else:
             description = "Import intent source YAML rows into IntentSource records."
             has_sensitive_variables = False
 
-        def run(self, source_file: str, disable_missing: bool, preview: bool = False) -> None:
+        def run(self, source_file: str, apply: bool = False) -> None:
             if source_file:
                 load_result = load_intent_sources(Path(source_file))
             else:
@@ -151,45 +158,82 @@ else:
 
             for error in load_result.errors:
                 self.logger.warning(error)
+
+            source_info = _import_source_info(load_result)
+            mode = "apply" if apply else "preview"
+
             if load_result.errors:
-                raise ValueError("Intent source catalog could not be loaded; see Job logs for details.")
+                artifact = build_artifact(
+                    schema_version=IMPORT_SCHEMA_VERSION,
+                    mode=mode,
+                    source=source_info,
+                    roots=CANONICAL_IMPORT_ROOTS,
+                    counts_by_root=_import_counts_by_root(load_result),
+                    objects=[],
+                    errors=list(load_result.errors),
+                    apply_requested=apply,
+                    attempted=False,
+                    committed=False,
+                    transaction_status="blocked" if apply else "not_requested",
+                    transaction_error=None,
+                    confirmation_status="not_applicable",
+                    confirmation_mismatches=[],
+                )
+                self._write_artifact(artifact)
+                raise ValueError(
+                    "Intent source catalog could not be loaded; see Job logs and the artifact for details."
+                )
 
-            with transaction.atomic():
-                counts, diffs = _import_intent_rows(load_result, disable_missing=disable_missing)
-                if preview:
-                    # Force a rollback of every write this pass made -- including compute
-                    # platform/instance rows a later row in the same YAML needed to resolve by
-                    # slug -- while `counts`/`diffs` remain plain Python data already extracted
-                    # from the (about to be discarded) DB state. This guarantees zero committed
-                    # writes independent of `disable_missing` or any UI checkbox default
-                    # (plan Section 5.8).
-                    transaction.set_rollback(True)
+            planned_objects = _plan_import(load_result)
+            blocked = any(obj.action == "conflict" for obj in planned_objects)
 
-            summary = {
-                "source_path": str(load_result.source_path),
-                "preview": bool(preview),
-                "intent_sources": len(load_result.intent_sources),
-                "desired_nodes": len(load_result.desired_nodes),
-                "desired_ip_ranges": len(load_result.desired_ip_ranges),
-                "desired_endpoints": len(load_result.desired_endpoints),
-                "desired_compute_platforms": len(load_result.desired_compute_platforms),
-                "desired_compute_instances": len(load_result.desired_compute_instances),
-                "desired_services": len(load_result.desired_services),
-                "desired_service_placements": len(load_result.desired_service_placements),
-                "desired_node_operational_overrides": len(
-                    load_result.desired_node_operational_overrides
-                ),
-                **counts,
-            }
-            self.logger.info(
-                "Intent source import %s summary: %s",
-                "preview" if preview else "apply",
-                _json(summary),
+            attempted = False
+            committed = False
+            transaction_status = "not_requested"
+            transaction_error: str | None = None
+            confirmation_status = "not_applicable"
+            confirmation_mismatches: list[dict] = []
+
+            if apply:
+                if blocked:
+                    transaction_status = "blocked"
+                else:
+                    attempted = True
+                    try:
+                        with transaction.atomic():
+                            _apply_import(load_result)
+                    except Exception as exc:  # noqa: BLE001 - reported truthfully below, not swallowed
+                        transaction_status = "rolled_back"
+                        transaction_error = f"{exc.__class__.__name__}: {exc}"
+                    else:
+                        committed = True
+                        transaction_status = "committed"
+                        confirmation_mismatches = _confirm_import(load_result)
+                        confirmation_status = "confirmed" if not confirmation_mismatches else "mismatched"
+
+            artifact = build_artifact(
+                schema_version=IMPORT_SCHEMA_VERSION,
+                mode=mode,
+                source=source_info,
+                roots=CANONICAL_IMPORT_ROOTS,
+                counts_by_root=_import_counts_by_root(load_result),
+                objects=planned_objects,
+                errors=[],
+                apply_requested=apply,
+                attempted=attempted,
+                committed=committed,
+                transaction_status=transaction_status,
+                transaction_error=transaction_error,
+                confirmation_status=confirmation_status,
+                confirmation_mismatches=confirmation_mismatches,
             )
+            self.logger.info("Intent source import %s summary: %s", mode, _json(artifact["totals"]))
+            self._write_artifact(artifact)
+
+        def _write_artifact(self, artifact: dict) -> None:
             self.create_file(
-                "intent-import-preview.json" if preview else "intent-import-apply.json",
-                json.dumps({"summary": summary, "diffs": diffs}, sort_keys=True, indent=2, ensure_ascii=True)
-                + "\n",
+                IMPORT_ARTIFACT_FILENAME,
+                json.dumps(artifact, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
             )
 
 
@@ -622,147 +666,514 @@ def _entry_from_intent_source(intent_source) -> IntentSourceEntry:
     )
 
 
-def _import_intent_rows(load_result, *, disable_missing: bool) -> tuple[dict, list[dict]]:
-    """Apply one strict YAML document atomically.
+def _import_source_info(load_result) -> dict:
+    """Source identity block shared by preview and apply artifacts (plan Section 5.4)."""
 
-    Returns `(counts, diffs)`. `diffs` names the exact root, identity, and changed
-    field old/new values for every row on every call -- not only in preview mode --
-    so preview and apply always compute the diff through the identical code path
-    (plan Section 5.8 preview/apply parity).
+    import hashlib
+    import subprocess
+
+    resolved_path = load_result.source_path
+    sha256 = None
+    try:
+        sha256 = hashlib.sha256(resolved_path.read_bytes()).hexdigest()
+    except OSError:
+        pass
+
+    repository_revision = None
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(resolved_path.parent), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if completed.returncode == 0:
+            repository_revision = completed.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    return {
+        "configured_path": str(resolved_path),
+        "resolved_path": str(resolved_path),
+        "sha256": sha256,
+        "repository_revision": repository_revision,
+    }
+
+
+def _import_counts_by_root(load_result) -> dict[str, int]:
+    return {
+        "intent_sources": len(load_result.intent_sources),
+        "desired_nodes": len(load_result.desired_nodes),
+        "desired_endpoints": len(load_result.desired_endpoints),
+        "desired_ip_ranges": len(load_result.desired_ip_ranges),
+        "desired_compute_platforms": len(load_result.desired_compute_platforms),
+        "desired_compute_instances": len(load_result.desired_compute_instances),
+        "desired_services": len(load_result.desired_services),
+        "desired_service_placements": len(load_result.desired_service_placements),
+        "desired_node_operational_overrides": len(load_result.desired_node_operational_overrides),
+    }
+
+
+def _project(row: dict | None, fields: dict) -> dict:
+    """Project a `.values()` row (or `None`) onto exactly `fields`' keys, JSON-safe."""
+
+    if row is None:
+        return {}
+    return {key: _json_safe(row.get(key)) for key in fields}
+
+
+def _plan_import(load_result) -> list:
+    """Build the complete read-only Import plan (plan Section 5.2).
+
+    Never calls `save()`/`update()`/`delete()`/`bulk_create()` -- every existing row is read via
+    `.values()` into a plain dict before `plan_upsert()` (itself pure, see `import_plan.py`)
+    makes the create/update/unchanged/conflict decision. References are resolved against the
+    union of already-existing rows and rows planned for creation in this same run; an
+    unresolvable reference becomes a `conflict`, never a raised exception, so one bad row does
+    not prevent the rest of the document from being planned and reported.
     """
 
-    counts = {
-        "created": 0,
-        "updated": 0,
-        "unchanged": 0,
-        "disabled": 0,
-        "nodes_created": 0,
-        "nodes_updated": 0,
-        "nodes_unchanged": 0,
-        "ip_ranges_created": 0,
-        "ip_ranges_updated": 0,
-        "ip_ranges_unchanged": 0,
-        "endpoints_created": 0,
-        "endpoints_updated": 0,
-        "endpoints_unchanged": 0,
-        "compute_platforms_created": 0,
-        "compute_platforms_updated": 0,
-        "compute_platforms_unchanged": 0,
-        "compute_instances_created": 0,
-        "compute_instances_updated": 0,
-        "compute_instances_unchanged": 0,
-        "services_created": 0,
-        "services_updated": 0,
-        "services_unchanged": 0,
-        "placements_created": 0,
-        "placements_updated": 0,
-        "placements_unchanged": 0,
-        "operational_overrides_created": 0,
-        "operational_overrides_updated": 0,
-        "operational_overrides_unchanged": 0,
-    }
-    diffs: list[dict] = []
+    planned: list = []
 
-    def _record(root: str, identity: dict, status: str, changed: dict) -> None:
-        diffs.append(
-            {
-                "root": root,
-                "identity": _json_safe(identity),
-                "status": status,
-                "changed": changed,
-            }
+    intent_source_rows = {
+        row["slug"]: row
+        for row in IntentSource.objects.values(
+            "pk", "slug", "url", "name", "source_type", "enabled", "ref", "owner",
+            "description", "source_config",
         )
+    }
+    intent_source_rows_by_url = {row["url"]: row for row in intent_source_rows.values() if row["url"]}
+    planned_intent_source_slugs = {intent_source_defaults(s)["slug"] for s in load_result.intent_sources}
 
-    seen_urls = set()
-    seen_slugs = set()
     for source in load_result.intent_sources:
-        defaults = intent_source_defaults(source)
-        seen_slugs.add(defaults["slug"])
+        create_fields = intent_source_defaults(source)
         if source.source_type == "git_repository":
             identity = {"url": source.url}
-            seen_urls.add(source.url)
+            existing = [intent_source_rows_by_url[source.url]] if source.url in intent_source_rows_by_url else []
         else:
-            identity = {"slug": defaults["slug"]}
-        status, _obj, changed = _validated_upsert_diff(IntentSource, identity, defaults)
-        counts[status] += 1
-        _record("intent_sources", identity, status, changed)
-
-    if disable_missing:
-        missing = (
-            IntentSource.objects.filter(enabled=True)
-            .exclude(url__in=seen_urls)
-            .exclude(slug__in=seen_slugs)
-        )
-        disabled_slugs = list(missing.values_list("slug", flat=True))
-        counts["disabled"] = missing.update(enabled=False)
-        for slug in disabled_slugs:
-            _record(
-                "intent_sources",
-                {"slug": slug},
-                "disabled",
-                {"enabled": {"old": True, "new": False}},
+            identity = {"slug": create_fields["slug"]}
+            existing = [intent_source_rows[create_fields["slug"]]] if create_fields["slug"] in intent_source_rows else []
+        planned.append(
+            plan_upsert(
+                model="IntentSource",
+                root="intent_sources",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(row, create_fields) for row in existing],
             )
+        )
+
+    def resolve_intent_source_pk(slug):
+        if slug is None:
+            return None, True
+        row = intent_source_rows.get(slug)
+        if row is not None:
+            return row["pk"], True
+        return (None, True) if slug in planned_intent_source_slugs else (None, False)
+
+    node_rows = {
+        row["slug"]: row
+        for row in DesiredNode.objects.values(
+            "pk", "slug", "name", "node_type", "accepted_actual_types", "lifecycle", "role",
+            "description", "expected_spec", "notes", "intent_source_id",
+        )
+    }
+    planned_node_slugs = {node.slug for node in load_result.desired_nodes}
+
+    for node in load_result.desired_nodes:
+        identity = desired_node_identity(node)
+        intent_source_pk, resolved = resolve_intent_source_pk(node.intent_source)
+        if not resolved:
+            planned.append(
+                unresolved_reference(
+                    "DesiredNode", "desired_nodes", identity,
+                    f"unknown intent_source slug: {node.intent_source}",
+                )
+            )
+            continue
+        create_fields = desired_node_defaults(node, intent_source_id=intent_source_pk)
+        update_fields = desired_node_update_fields(node, intent_source_id=intent_source_pk)
+        existing_row = node_rows.get(node.slug)
+        planned.append(
+            plan_upsert(
+                model="DesiredNode",
+                root="desired_nodes",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(update_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+            )
+        )
+
+    def resolve_node_pk(slug):
+        row = node_rows.get(slug)
+        if row is not None:
+            return row["pk"], True
+        return (None, True) if slug in planned_node_slugs else (None, False)
+
+    ip_range_rows = {
+        row["slug"]: row
+        for row in DesiredIPRange.objects.values(
+            "pk", "name", "start_address", "end_address", "range_policy", "lifecycle",
+            "generate_dnsmasq", "dnsmasq_options", "description",
+        )
+    }
+    for ip_range in load_result.desired_ip_ranges:
+        identity = desired_ip_range_identity(ip_range)
+        create_fields = desired_ip_range_defaults(ip_range)
+        existing_row = ip_range_rows.get(ip_range.slug)
+        planned.append(
+            plan_upsert(
+                model="DesiredIPRange",
+                root="desired_ip_ranges",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+            )
+        )
+
+    endpoint_field_names = (
+        "ip_address", "mac_address", "dns_name", "dns_name_source", "mdns_name",
+        "mdns_name_source", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "ip_policy",
+        "dnsmasq_record_type", "description",
+    )
+    endpoint_rows = {
+        (row["desired_node__slug"], row["name"], row["endpoint_type"]): row
+        for row in DesiredEndpoint.objects.values("pk", "desired_node__slug", "name", "endpoint_type", *endpoint_field_names)
+    }
+    planned_endpoint_keys = {
+        (endpoint.desired_node, endpoint.name, endpoint.endpoint_type) for endpoint in load_result.desired_endpoints
+    }
+
+    for endpoint in load_result.desired_endpoints:
+        node_pk, node_resolved = resolve_node_pk(endpoint.desired_node)
+        identity = {"desired_node": endpoint.desired_node, "name": endpoint.name, "endpoint_type": endpoint.endpoint_type}
+        if not node_resolved:
+            planned.append(
+                unresolved_reference(
+                    "DesiredEndpoint", "desired_endpoints", identity,
+                    f"unknown desired_node slug: {endpoint.desired_node}",
+                )
+            )
+            continue
+        create_fields = desired_endpoint_defaults(endpoint)
+        existing_row = endpoint_rows.get((endpoint.desired_node, endpoint.name, endpoint.endpoint_type))
+        planned.append(
+            plan_upsert(
+                model="DesiredEndpoint",
+                root="desired_endpoints",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+            )
+        )
+
+    def resolve_endpoint_pk(node_slug, reference):
+        if reference is None:
+            return None, True
+        key = (node_slug, reference["name"], reference["endpoint_type"])
+        row = endpoint_rows.get(key)
+        if row is not None:
+            return row["pk"], True
+        return (None, True) if key in planned_endpoint_keys else (None, False)
+
+    platform_rows = {
+        row["slug"]: row
+        for row in DesiredComputePlatform.objects.values(
+            "pk", "slug", "name", "provider_type", "lifecycle", "control_node_id",
+            "config_schema_version", "config",
+        )
+    }
+    planned_platform_slugs = {platform.slug for platform in load_result.desired_compute_platforms}
+
+    for platform in load_result.desired_compute_platforms:
+        control_node_pk, resolved = resolve_node_pk(platform.control_node)
+        identity = desired_compute_platform_identity(platform)
+        if not resolved:
+            planned.append(
+                unresolved_reference(
+                    "DesiredComputePlatform", "desired_compute_platforms", identity,
+                    f"unknown control_node slug: {platform.control_node}",
+                )
+            )
+            continue
+        create_fields = desired_compute_platform_defaults(platform, control_node_id=control_node_pk)
+        existing_row = platform_rows.get(platform.slug)
+        planned.append(
+            plan_upsert(
+                model="DesiredComputePlatform",
+                root="desired_compute_platforms",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+            )
+        )
+
+    def resolve_platform_pk(slug):
+        row = platform_rows.get(slug)
+        if row is not None:
+            return row["pk"], True
+        return (None, True) if slug in planned_platform_slugs else (None, False)
+
+    instance_rows = {
+        row["desired_node_id"]: row
+        for row in DesiredComputeInstance.objects.values(
+            "pk", "desired_node_id", "platform_id", "instance_kind", "desired_power_state",
+            "vcpus", "memory_mb", "root_disk_gb", "config_schema_version", "config",
+        )
+    }
+    instance_rows_by_node_slug = {}
+    for row in DesiredComputeInstance.objects.values(
+        "pk", "desired_node__slug", "platform_id", "instance_kind", "desired_power_state",
+        "vcpus", "memory_mb", "root_disk_gb", "config_schema_version", "config",
+    ):
+        instance_rows_by_node_slug[row["desired_node__slug"]] = row
+
+    for instance in load_result.desired_compute_instances:
+        node_pk, node_resolved = resolve_node_pk(instance.desired_node)
+        platform_pk, platform_resolved = resolve_platform_pk(instance.platform)
+        identity = {"desired_node": instance.desired_node}
+        if not node_resolved:
+            planned.append(
+                unresolved_reference(
+                    "DesiredComputeInstance", "desired_compute_instances", identity,
+                    f"unknown desired_node slug: {instance.desired_node}",
+                )
+            )
+            continue
+        if not platform_resolved:
+            planned.append(
+                unresolved_reference(
+                    "DesiredComputeInstance", "desired_compute_instances", identity,
+                    f"unknown platform slug: {instance.platform}",
+                )
+            )
+            continue
+        create_fields = desired_compute_instance_defaults(instance, platform_id=platform_pk)
+        existing_row = instance_rows_by_node_slug.get(instance.desired_node)
+        planned.append(
+            plan_upsert(
+                model="DesiredComputeInstance",
+                root="desired_compute_instances",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+            )
+        )
+
+    service_field_names = (
+        "name", "slug", "display_name", "lifecycle", "source_ref", "source_catalog_path",
+        "catalog_kind", "catalog_owner", "catalog_lifecycle", "prefers_gpu", "min_memory_gb",
+        "requirements", "notes",
+    )
+    service_rows = {
+        (row["intent_source__slug"], row["catalog_namespace"], row["catalog_metadata_name"], row["service_type"]): row
+        for row in DesiredService.objects.values(
+            "pk", "intent_source__slug", "catalog_namespace", "catalog_metadata_name",
+            "service_type", *service_field_names,
+        )
+    }
+    planned_service_keys = {
+        (service.intent_source, service.catalog_namespace, service.catalog_metadata_name, service.service_type)
+        for service in load_result.desired_services
+    }
+
+    for service in load_result.desired_services:
+        identity = {
+            "intent_source": service.intent_source,
+            "catalog_namespace": service.catalog_namespace,
+            "catalog_metadata_name": service.catalog_metadata_name,
+            "service_type": service.service_type,
+        }
+        if service.intent_source not in intent_source_rows and service.intent_source not in planned_intent_source_slugs:
+            planned.append(
+                unresolved_reference(
+                    "DesiredService", "desired_services", identity,
+                    f"unknown intent_source slug: {service.intent_source}",
+                )
+            )
+            continue
+        create_fields = desired_service_entry_defaults(service)
+        update_fields = desired_service_entry_update_fields(service)
+        locked_fields = desired_service_entry_locked_fields(service)
+        existing_row = service_rows.get(
+            (service.intent_source, service.catalog_namespace, service.catalog_metadata_name, service.service_type)
+        )
+        planned.append(
+            plan_upsert(
+                model="DesiredService",
+                root="desired_services",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(update_fields),
+                existing_matches=[_project(existing_row, create_fields)] if existing_row else [],
+                locked_fields=_json_safe(locked_fields),
+            )
+        )
+
+    def resolve_service_pk(reference):
+        key = (reference["intent_source"], reference["catalog_namespace"], reference["catalog_metadata_name"], reference["service_type"])
+        row = service_rows.get(key)
+        if row is not None:
+            return row["pk"], True
+        return (None, True) if key in planned_service_keys else (None, False)
+
+    placement_rows = {}
+    for row in DesiredServicePlacement.objects.values(
+        "pk", "desired_service__intent_source__slug", "desired_service__catalog_namespace",
+        "desired_service__catalog_metadata_name", "desired_service__service_type", "instance_name",
+        "desired_node_id", "desired_endpoint_id", "desired_state", "instance_role",
+        "deployment_profile", "config_schema_version", "config", "assignment_source", "reason",
+    ):
+        key = (
+            (
+                row["desired_service__intent_source__slug"],
+                row["desired_service__catalog_namespace"],
+                row["desired_service__catalog_metadata_name"],
+                row["desired_service__service_type"],
+            ),
+            row["instance_name"],
+        )
+        placement_rows[key] = row
+
+    placement_field_names = (
+        "desired_node_id", "desired_endpoint_id", "desired_state", "instance_role",
+        "deployment_profile", "config_schema_version", "config", "assignment_source", "reason",
+    )
+
+    for placement in load_result.desired_service_placements:
+        identity = {"desired_service": placement.desired_service, "instance_name": placement.instance_name}
+        service_pk, service_resolved = resolve_service_pk(placement.desired_service)
+        node_pk, node_resolved = resolve_node_pk(placement.desired_node)
+        endpoint_pk, endpoint_resolved = resolve_endpoint_pk(placement.desired_node, placement.desired_endpoint)
+        if not service_resolved:
+            planned.append(unresolved_reference("DesiredServicePlacement", "desired_service_placements", identity, "unresolved desired_service reference"))
+            continue
+        if not node_resolved:
+            planned.append(unresolved_reference("DesiredServicePlacement", "desired_service_placements", identity, f"unknown desired_node slug: {placement.desired_node}"))
+            continue
+        if not endpoint_resolved:
+            planned.append(unresolved_reference("DesiredServicePlacement", "desired_service_placements", identity, "unresolved desired_endpoint reference"))
+            continue
+        create_fields = desired_service_placement_defaults(placement, desired_node_id=node_pk, desired_endpoint_id=endpoint_pk)
+        service_key = (
+            placement.desired_service["intent_source"], placement.desired_service["catalog_namespace"],
+            placement.desired_service["catalog_metadata_name"], placement.desired_service["service_type"],
+        )
+        existing_row = placement_rows.get((service_key, placement.instance_name))
+        planned.append(
+            plan_upsert(
+                model="DesiredServicePlacement",
+                root="desired_service_placements",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, dict.fromkeys(placement_field_names))] if existing_row else [],
+            )
+        )
+
+    override_rows = {
+        row["desired_node__slug"]: row
+        for row in DesiredNodeOperationalOverride.objects.values(
+            "pk", "desired_node__slug", "declared_host_os", "connection_path",
+            "local_endpoint_id", "tailscale_endpoint_id", "ansible_port", "power_control", "is_laptop",
+        )
+    }
+    override_field_names = (
+        "declared_host_os", "connection_path", "local_endpoint_id", "tailscale_endpoint_id",
+        "ansible_port", "power_control", "is_laptop",
+    )
+
+    for operational_override in load_result.desired_node_operational_overrides:
+        identity = {"desired_node": operational_override.desired_node}
+        node_pk, node_resolved = resolve_node_pk(operational_override.desired_node)
+        local_pk, local_resolved = resolve_endpoint_pk(operational_override.desired_node, operational_override.local_endpoint)
+        tailscale_pk, tailscale_resolved = resolve_endpoint_pk(operational_override.desired_node, operational_override.tailscale_endpoint)
+        if not (node_resolved and local_resolved and tailscale_resolved):
+            planned.append(
+                unresolved_reference(
+                    "DesiredNodeOperationalOverride", "desired_node_operational_overrides", identity,
+                    f"unresolved reference on desired_node: {operational_override.desired_node}",
+                )
+            )
+            continue
+        create_fields = desired_node_operational_override_defaults(
+            operational_override, local_endpoint_id=local_pk, tailscale_endpoint_id=tailscale_pk,
+        )
+        existing_row = override_rows.get(operational_override.desired_node)
+        planned.append(
+            plan_upsert(
+                model="DesiredNodeOperationalOverride",
+                root="desired_node_operational_overrides",
+                identity=identity,
+                create_fields=_json_safe(create_fields),
+                update_fields=_json_safe(create_fields),
+                existing_matches=[_project(existing_row, dict.fromkeys(override_field_names))] if existing_row else [],
+            )
+        )
+
+    return planned
+
+
+def _apply_import(load_result) -> None:
+    """Apply an already-plan-validated document inside the caller's `transaction.atomic()`.
+
+    Only called when `_plan_import()` reported zero conflicts, so every reference below is
+    expected to resolve; a `require_unique_reference`/`DoesNotExist`/`full_clean()` failure here
+    is a genuine precondition-changed-since-plan race, and propagates to abort and roll back the
+    whole transaction (plan Section 5.2 items 6-7).
+    """
+
+    source_by_key = _intent_source_lookup()
+    for source in load_result.intent_sources:
+        create_fields = intent_source_defaults(source)
+        if source.source_type == "git_repository":
+            identity = {"url": source.url}
+        else:
+            identity = {"slug": create_fields["slug"]}
+        _validated_upsert_split(IntentSource, identity, create_fields, create_fields)
 
     source_by_key = _intent_source_lookup()
     for node in load_result.desired_nodes:
         intent_source = source_by_key.get(node.intent_source) if node.intent_source else None
         identity = desired_node_identity(node)
-        status, _obj, changed = _validated_upsert_diff(
+        intent_source_id = getattr(intent_source, "pk", None)
+        _validated_upsert_split(
             DesiredNode,
             identity,
-            desired_node_defaults(node, intent_source_id=getattr(intent_source, "pk", None)),
+            desired_node_defaults(node, intent_source_id=intent_source_id),
+            desired_node_update_fields(node, intent_source_id=intent_source_id),
         )
-        counts[f"nodes_{status}"] += 1
-        _record("desired_nodes", identity, status, changed)
 
     for ip_range in load_result.desired_ip_ranges:
         identity = desired_ip_range_identity(ip_range)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredIPRange,
-            identity,
-            desired_ip_range_defaults(ip_range),
-        )
-        counts[f"ip_ranges_{status}"] += 1
-        _record("desired_ip_ranges", identity, status, changed)
+        create_fields = desired_ip_range_defaults(ip_range)
+        _validated_upsert_split(DesiredIPRange, identity, create_fields, create_fields)
 
     for endpoint in load_result.desired_endpoints:
         desired_node = _resolve_desired_node(endpoint.desired_node)
         identity = desired_endpoint_identity(endpoint, desired_node_id=desired_node.pk)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredEndpoint,
-            identity,
-            desired_endpoint_defaults(endpoint, desired_node=desired_node),
-        )
-        counts[f"endpoints_{status}"] += 1
-        _record("desired_endpoints", identity, status, changed)
+        create_fields = desired_endpoint_defaults(endpoint)
+        _validated_upsert_split(DesiredEndpoint, identity, create_fields, create_fields)
 
     for platform in load_result.desired_compute_platforms:
         control_node = _resolve_desired_node(platform.control_node)
         identity = desired_compute_platform_identity(platform)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredComputePlatform,
-            identity,
-            desired_compute_platform_defaults(platform, control_node_id=control_node.pk),
-        )
-        counts[f"compute_platforms_{status}"] += 1
-        _record("desired_compute_platforms", identity, status, changed)
+        create_fields = desired_compute_platform_defaults(platform, control_node_id=control_node.pk)
+        _validated_upsert_split(DesiredComputePlatform, identity, create_fields, create_fields)
 
     for instance in load_result.desired_compute_instances:
         desired_node = _resolve_desired_node(instance.desired_node)
         platform_obj = _resolve_desired_compute_platform(instance.platform)
         identity = desired_compute_instance_identity(desired_node.pk)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredComputeInstance,
-            identity,
-            desired_compute_instance_defaults(instance, platform_id=platform_obj.pk),
-        )
-        counts[f"compute_instances_{status}"] += 1
-        _record(
-            "desired_compute_instances",
-            {"desired_node": instance.desired_node, **identity},
-            status,
-            changed,
-        )
+        create_fields = desired_compute_instance_defaults(instance, platform_id=platform_obj.pk)
+        _validated_upsert_split(DesiredComputeInstance, identity, create_fields, create_fields)
 
     for service in load_result.desired_services:
         intent_source = source_by_key.get(service.intent_source)
@@ -771,109 +1182,132 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> tuple[dict, li
                 f"desired_services entry references unknown intent_source slug: {service.intent_source}."
             )
         identity = desired_service_entry_identity(service, intent_source.pk)
-        status, _obj, changed = _validated_upsert_diff(
+        _validated_upsert_split(
             DesiredService,
             identity,
             desired_service_entry_defaults(service),
+            desired_service_entry_update_fields(service),
+            locked_fields=desired_service_entry_locked_fields(service),
         )
-        counts[f"services_{status}"] += 1
-        _record("desired_services", identity, status, changed)
 
     for placement in load_result.desired_service_placements:
         desired_service = _resolve_desired_service(placement.desired_service)
         desired_node = _resolve_desired_node(placement.desired_node)
-        desired_endpoint = _resolve_desired_endpoint(
-            desired_node,
-            placement.desired_endpoint,
-            required=False,
-        )
+        desired_endpoint = _resolve_desired_endpoint(desired_node, placement.desired_endpoint, required=False)
         identity = desired_service_placement_identity(placement, desired_service.pk)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredServicePlacement,
-            identity,
-            desired_service_placement_defaults(
-                placement,
-                desired_node_id=desired_node.pk,
-                desired_endpoint_id=getattr(desired_endpoint, "pk", None),
-            ),
+        create_fields = desired_service_placement_defaults(
+            placement,
+            desired_node_id=desired_node.pk,
+            desired_endpoint_id=getattr(desired_endpoint, "pk", None),
         )
-        counts[f"placements_{status}"] += 1
-        _record("desired_service_placements", identity, status, changed)
+        _validated_upsert_split(DesiredServicePlacement, identity, create_fields, create_fields)
 
     for operational_override in load_result.desired_node_operational_overrides:
         desired_node = _resolve_desired_node(operational_override.desired_node)
-        local_endpoint = _resolve_desired_endpoint(
-            desired_node,
-            operational_override.local_endpoint,
-            required=False,
-        )
-        tailscale_endpoint = _resolve_desired_endpoint(
-            desired_node,
-            operational_override.tailscale_endpoint,
-            required=False,
-        )
+        local_endpoint = _resolve_desired_endpoint(desired_node, operational_override.local_endpoint, required=False)
+        tailscale_endpoint = _resolve_desired_endpoint(desired_node, operational_override.tailscale_endpoint, required=False)
         identity = desired_node_operational_override_identity(operational_override, desired_node.pk)
-        status, _obj, changed = _validated_upsert_diff(
-            DesiredNodeOperationalOverride,
-            identity,
-            desired_node_operational_override_defaults(
-                operational_override,
-                local_endpoint_id=getattr(local_endpoint, "pk", None),
-                tailscale_endpoint_id=getattr(tailscale_endpoint, "pk", None),
-            ),
+        create_fields = desired_node_operational_override_defaults(
+            operational_override,
+            local_endpoint_id=getattr(local_endpoint, "pk", None),
+            tailscale_endpoint_id=getattr(tailscale_endpoint, "pk", None),
         )
-        counts[f"operational_overrides_{status}"] += 1
-        _record("desired_node_operational_overrides", identity, status, changed)
-
-    return counts, diffs
+        _validated_upsert_split(DesiredNodeOperationalOverride, identity, create_fields, create_fields)
 
 
-def _validated_upsert(model, identity: dict, defaults: dict):
-    queryset = model.objects.filter(**identity)
-    match_count = queryset.count()
-    if match_count > 1:
-        require_unique_reference(model.__name__, match_count)
-    obj = queryset.first() if match_count == 1 else model(**identity)
-    created = match_count == 0
-    if not created and _object_matches_defaults(obj, defaults):
-        return "unchanged", obj
-    for key, value in defaults.items():
-        setattr(obj, key, value)
-    obj.full_clean()
-    obj.save()
-    return ("created" if created else "updated"), obj
+def _confirm_import(load_result) -> list[dict]:
+    """Refetch every planned identity post-commit and confirm the committed YAML-owned values
+    (plan Section 5.2 item 9). Returns a list of mismatch dicts; empty means fully confirmed."""
+
+    mismatches: list[dict] = []
+
+    for node in load_result.desired_nodes:
+        try:
+            obj = DesiredNode.objects.get(slug=node.slug)
+        except DesiredNode.DoesNotExist:
+            mismatches.append({"model": "DesiredNode", "identity": {"slug": node.slug}, "reason": "not_found"})
+            continue
+        expected = desired_node_update_fields(node)
+        for key, value in expected.items():
+            if getattr(obj, key) != value:
+                mismatches.append(
+                    {
+                        "model": "DesiredNode",
+                        "identity": {"slug": node.slug},
+                        "field": key,
+                        "expected": _json_safe(value),
+                        "actual": _json_safe(getattr(obj, key)),
+                    }
+                )
+
+    for service in load_result.desired_services:
+        intent_source = IntentSource.objects.filter(slug=service.intent_source).first()
+        if intent_source is None:
+            continue
+        try:
+            obj = DesiredService.objects.get(
+                intent_source=intent_source,
+                catalog_namespace=service.catalog_namespace,
+                catalog_metadata_name=service.catalog_metadata_name,
+                service_type=service.service_type,
+            )
+        except DesiredService.DoesNotExist:
+            mismatches.append(
+                {
+                    "model": "DesiredService",
+                    "identity": desired_service_entry_identity(service, intent_source.pk),
+                    "reason": "not_found",
+                }
+            )
+            continue
+        expected = desired_service_entry_update_fields(service)
+        for key, value in expected.items():
+            if getattr(obj, key) != value:
+                mismatches.append(
+                    {
+                        "model": "DesiredService",
+                        "identity": desired_service_entry_identity(service, intent_source.pk),
+                        "field": key,
+                        "expected": _json_safe(value),
+                        "actual": _json_safe(getattr(obj, key)),
+                    }
+                )
+
+    return mismatches
 
 
-def _validated_upsert_diff(model, identity: dict, defaults: dict):
-    """Same upsert as `_validated_upsert`, plus the exact changed-field old/new diff.
+def _validated_upsert_split(model, identity: dict, create_fields: dict, update_fields: dict, *, locked_fields: dict | None = None):
+    """Create-or-update one row, writing only `update_fields` on an existing row.
 
-    Diffs the *persisted* values (after `full_clean()`/`save()`, i.e. after model-level
-    normalization such as MAC canonicalization or config-key stripping) rather than the
-    raw incoming `defaults`, so a preview and the eventual apply never disagree on what
-    actually changed.
+    Raises if `locked_fields` disagrees with the stored value on an existing row -- this should
+    never trigger because `_plan_import()` already reported that case as a `conflict` and the
+    caller refuses to reach `_apply_import()` when any conflict exists; it exists as a
+    defense-in-depth precondition-revalidation guard, not the primary safety mechanism.
     """
 
     queryset = model.objects.filter(**identity)
     match_count = queryset.count()
     if match_count > 1:
         require_unique_reference(model.__name__, match_count)
-    before = None
-    if match_count == 1:
-        existing = queryset.first()
-        before = {key: getattr(existing, key) for key in defaults}
+    if match_count == 0:
+        obj = model(**identity)
+        for key, value in create_fields.items():
+            setattr(obj, key, value)
+        obj.full_clean()
+        obj.save()
+        return obj
 
-    status, obj = _validated_upsert(model, identity, defaults)
-
-    changed = {}
-    if status == "created":
-        changed = {key: {"old": None, "new": _json_safe(getattr(obj, key))} for key in defaults}
-    elif status == "updated":
-        for key in defaults:
-            old_value = before.get(key) if before else None
-            new_value = getattr(obj, key)
-            if old_value != new_value:
-                changed[key] = {"old": _json_safe(old_value), "new": _json_safe(new_value)}
-    return status, obj, changed
+    obj = queryset.first()
+    for key, value in (locked_fields or {}).items():
+        if getattr(obj, key) != value:
+            raise ValueError(f"{model.__name__}.{key} is not YAML-updatable on an existing row.")
+    if all(getattr(obj, key) == value for key, value in update_fields.items()):
+        return obj
+    for key, value in update_fields.items():
+        setattr(obj, key, value)
+    obj.full_clean()
+    obj.save()
+    return obj
 
 
 def _json_safe(value):
@@ -931,7 +1365,3 @@ def _intent_source_lookup() -> dict:
         if intent_source.url:
             lookup[intent_source.url] = intent_source
     return lookup
-
-
-def _object_matches_defaults(obj, defaults: dict) -> bool:
-    return all(getattr(obj, key) == value for key, value in defaults.items())

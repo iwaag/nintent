@@ -56,40 +56,64 @@ def _fake_model(rows):
 
 
 class StrictImportHelperTests(unittest.TestCase):
-    def test_validated_upsert_is_idempotent_for_matching_defaults(self) -> None:
+    def test_validated_upsert_split_is_idempotent_for_matching_update_fields(self) -> None:
         row = _FakeObject(pk="existing-id", value="same")
         model = _fake_model([row])
 
-        status, result = jobs._validated_upsert(model, {"key": "identity"}, {"value": "same"})
+        result = jobs._validated_upsert_split(
+            model, {"key": "identity"}, {"value": "same"}, {"value": "same"}
+        )
 
-        self.assertEqual(status, "unchanged")
         self.assertIs(result, row)
         self.assertFalse(row.cleaned)
         self.assertFalse(row.saved)
 
-    def test_validated_upsert_validates_before_create_or_update(self) -> None:
+    def test_validated_upsert_split_validates_before_create_or_update(self) -> None:
         existing = _FakeObject(pk="existing-id", value="old")
         update_model = _fake_model([existing])
 
-        status, _result = jobs._validated_upsert(
-            update_model,
-            {"key": "identity"},
-            {"value": "new"},
+        updated = jobs._validated_upsert_split(
+            update_model, {"key": "identity"}, {"value": "new"}, {"value": "new"}
         )
 
-        self.assertEqual(status, "updated")
-        self.assertTrue(existing.cleaned)
-        self.assertTrue(existing.saved)
+        self.assertTrue(updated.cleaned)
+        self.assertTrue(updated.saved)
 
         create_model = _fake_model([])
-        status, created = jobs._validated_upsert(
-            create_model,
-            {"key": "identity"},
-            {"value": "new"},
+        created = jobs._validated_upsert_split(
+            create_model, {"key": "identity"}, {"value": "new"}, {"value": "new"}
         )
-        self.assertEqual(status, "created")
         self.assertTrue(created.cleaned)
         self.assertTrue(created.saved)
+
+    def test_validated_upsert_split_never_touches_a_preserved_field(self) -> None:
+        # `update_fields` deliberately omits `lifecycle` (DesiredNode ownership split); a
+        # differing YAML-side value must never reach the object at all.
+        existing = _FakeObject(pk="existing-id", name="old", lifecycle="approved")
+        model = _fake_model([existing])
+
+        jobs._validated_upsert_split(
+            model,
+            {"key": "identity"},
+            {"name": "new", "lifecycle": "active"},
+            {"name": "new"},
+        )
+
+        self.assertEqual(existing.name, "new")
+        self.assertEqual(existing.lifecycle, "approved")
+
+    def test_validated_upsert_split_raises_on_locked_field_disagreement(self) -> None:
+        existing = _FakeObject(pk="existing-id", name="renamed", lifecycle="active")
+        model = _fake_model([existing])
+
+        with self.assertRaises(ValueError):
+            jobs._validated_upsert_split(
+                model,
+                {"key": "identity"},
+                {"name": "prometheus", "lifecycle": "active"},
+                {"lifecycle": "active"},
+                locked_fields={"name": "prometheus"},
+            )
 
     def test_endpoint_resolution_is_always_scoped_to_selected_node(self) -> None:
         endpoint = SimpleNamespace(pk="endpoint-id")
@@ -146,54 +170,49 @@ class StrictImportHelperTests(unittest.TestCase):
         )
 
 
-class ValidatedUpsertDiffTests(unittest.TestCase):
-    def test_create_reports_every_field_with_old_none(self) -> None:
-        model = _fake_model([])
-
-        status, obj, changed = jobs._validated_upsert_diff(
-            model,
-            {"slug": "aghub-pve"},
-            {"name": "aghub Proxmox", "lifecycle": "active"},
+class ImportSourceInfoAndCountsTests(unittest.TestCase):
+    def test_import_counts_by_root_covers_every_canonical_root(self) -> None:
+        load_result = SimpleNamespace(
+            intent_sources=[1, 2],
+            desired_nodes=[1],
+            desired_endpoints=[],
+            desired_ip_ranges=[1, 2, 3],
+            desired_compute_platforms=[],
+            desired_compute_instances=[],
+            desired_services=[1, 2, 3, 4, 5, 6],
+            desired_service_placements=[1],
+            desired_node_operational_overrides=[],
         )
 
-        self.assertEqual(status, "created")
-        self.assertEqual(obj.name, "aghub Proxmox")
+        counts = jobs._import_counts_by_root(load_result)
+
         self.assertEqual(
-            changed,
+            counts,
             {
-                "name": {"old": None, "new": "aghub Proxmox"},
-                "lifecycle": {"old": None, "new": "active"},
+                "intent_sources": 2,
+                "desired_nodes": 1,
+                "desired_endpoints": 0,
+                "desired_ip_ranges": 3,
+                "desired_compute_platforms": 0,
+                "desired_compute_instances": 0,
+                "desired_services": 6,
+                "desired_service_placements": 1,
+                "desired_node_operational_overrides": 0,
             },
         )
 
-    def test_update_reports_only_the_changed_fields(self) -> None:
-        existing = _FakeObject(pk="existing-id", name="old name", lifecycle="active")
-        model = _fake_model([existing])
+    def test_project_returns_only_requested_keys_json_safe(self) -> None:
+        class _Id:
+            def __str__(self) -> str:
+                return "uuid-value"
 
-        status, obj, changed = jobs._validated_upsert_diff(
-            model,
-            {"slug": "aghub-pve"},
-            {"name": "new name", "lifecycle": "active"},
+        row = {"name": "agpc", "lifecycle": "active", "pk": _Id(), "extra": "ignored"}
+
+        self.assertEqual(
+            jobs._project(row, {"name": None, "lifecycle": None}),
+            {"name": "agpc", "lifecycle": "active"},
         )
-
-        self.assertEqual(status, "updated")
-        self.assertEqual(changed, {"name": {"old": "old name", "new": "new name"}})
-        self.assertIs(obj, existing)
-
-    def test_unchanged_reports_an_empty_diff(self) -> None:
-        existing = _FakeObject(pk="existing-id", name="same", lifecycle="active")
-        model = _fake_model([existing])
-
-        status, obj, changed = jobs._validated_upsert_diff(
-            model,
-            {"slug": "aghub-pve"},
-            {"name": "same", "lifecycle": "active"},
-        )
-
-        self.assertEqual(status, "unchanged")
-        self.assertEqual(changed, {})
-        self.assertFalse(existing.cleaned)
-        self.assertFalse(existing.saved)
+        self.assertEqual(jobs._project(None, {"name": None}), {})
 
 
 class ResolveDesiredComputePlatformTests(unittest.TestCase):

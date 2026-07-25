@@ -186,6 +186,28 @@ def desired_service_entry_defaults(entry: DesiredServiceEntry) -> dict[str, Any]
     }
 
 
+def desired_service_entry_update_fields(entry: DesiredServiceEntry) -> dict[str, Any]:
+    """Return the fields Import may overwrite on an *existing* manually-declared DesiredService.
+
+    Only `lifecycle` and `notes` are YAML-update-owned (plan.md interface_contract/p1 Section
+    5.3): `requirements` has no YAML input field and must never be reset to `{}` on re-import;
+    `name`/`slug`/`display_name` are handled separately by
+    `desired_service_entry_locked_fields()` (a disagreement there is a conflict, not a silent
+    preserve); every other field (`source_ref`, `source_catalog_path`, `catalog_kind`,
+    `catalog_owner`, `catalog_lifecycle`, `prefers_gpu`, `min_memory_gb`) is
+    Analyze-Job-owned and must survive a re-import unchanged.
+    """
+
+    return {"lifecycle": entry.lifecycle, "notes": entry.notes}
+
+
+def desired_service_entry_locked_fields(entry: DesiredServiceEntry) -> dict[str, Any]:
+    """Return the DesiredService fields that block as a `conflict` rather than being silently
+    preserved or overwritten when an existing row disagrees (plan.md Section 5.3)."""
+
+    return {"name": entry.name, "slug": entry.slug, "display_name": entry.display_name}
+
+
 def dependency_defaults(dependency: dict[str, Any]) -> dict[str, Any]:
     """Return model defaults for a normalized dependency."""
 
@@ -293,6 +315,19 @@ def desired_node_defaults(node: DesiredNodeEntry, intent_source_id: Any | None =
         "notes": node.notes,
         "intent_source_id": intent_source_id,
     }
+    return defaults
+
+
+def desired_node_update_fields(node: DesiredNodeEntry, intent_source_id: Any | None = None) -> dict[str, Any]:
+    """Return the fields Import may overwrite on an *existing* DesiredNode.
+
+    Excludes `lifecycle` (create-only per plan.md interface_contract/p1 Section 5.3 -- a later
+    `nctl lifecycle` transition must survive re-import) and any realized link/source, which
+    `desired_node_defaults()` never included in the first place.
+    """
+
+    defaults = desired_node_defaults(node, intent_source_id=intent_source_id)
+    defaults.pop("lifecycle", None)
     return defaults
 
 
