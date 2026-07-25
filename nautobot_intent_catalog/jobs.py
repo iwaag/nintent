@@ -344,7 +344,6 @@ else:
                 DesiredEndpoint.objects.select_related(
                     "desired_node",
                     "desired_node__realized_device",
-                    "desired_node__realized_vm",
                     "realized_ip_address",
                 )
                 .exclude(ip_address__isnull=True)
@@ -454,16 +453,15 @@ def _observed_ip_candidates(desired_node) -> list[dict[str, str]]:
     Reads only the `primary_ip_address`/`last_seen` custom fields the nauto
     `Ingest Nodeutils Inventory` Job already writes onto a realized Device (the
     same actual-state boundary nctl reads as `ActualFacts.local_ip`). Never
-    reads the controller-local nodeutils cache directly. nauto ingestion
-    currently only writes these fields onto Devices, so a linked VM without its
-    own populated custom field naturally contributes no candidate here -- this
-    does not guess a VM value.
+    reads the controller-local nodeutils cache directly. nauto ingestion only
+    writes these guest-OS fields onto Devices; the compute-layer
+    `DesiredComputeInstance.realized_vm` link is a separate resource-level
+    realization and is never consulted for guest-OS IP evidence here.
     """
 
     candidates: list[dict[str, str]] = []
     for realized, source in (
         (getattr(desired_node, "realized_device", None), "realized_device"),
-        (getattr(desired_node, "realized_vm", None), "realized_vm"),
     ):
         if realized is None:
             continue

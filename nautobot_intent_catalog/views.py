@@ -153,7 +153,7 @@ else:
     class DesiredNodeListView(ObjectListView):
         """List desired node records."""
 
-        queryset = DesiredNode.objects.select_related("intent_source", "realized_device", "realized_vm")
+        queryset = DesiredNode.objects.select_related("intent_source", "realized_device")
         filterset = DesiredNodeFilterSet
         table = DesiredNodeTable
 
@@ -161,7 +161,7 @@ else:
     class DesiredNodeView(ObjectView):
         """Show one desired node record."""
 
-        queryset = DesiredNode.objects.select_related("intent_source", "realized_device", "realized_vm")
+        queryset = DesiredNode.objects.select_related("intent_source", "realized_device")
 
         def get_extra_context(self, request, instance):
             return {"dashboard_url": _configured_dashboard_url()}

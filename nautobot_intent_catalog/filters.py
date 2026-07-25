@@ -105,7 +105,6 @@ else:
                 "role",
                 "intent_source",
                 "realized_device",
-                "realized_vm",
                 "reconciliation_status",
             )
 

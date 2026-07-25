@@ -215,13 +215,12 @@ else:
                 "expected_spec",
                 "intent_source",
                 "realized_device",
-                "realized_vm",
                 "notes",
             )
 
         def save(self, commit=True):
             instance = super().save(commit=False)
-            for relation_name in ("realized_device", "realized_vm"):
+            for relation_name in ("realized_device",):
                 if relation_name in self.changed_data:
                     relation_id = getattr(instance, f"{relation_name}_id")
                     setattr(instance, f"{relation_name}_source", "override" if relation_id else None)

@@ -21,11 +21,60 @@ def _endpoint_is_usable_local(endpoint) -> bool:
         for field_name in ("dns_name", "mdns_name")
     )
 
+
+def _endpoint_has_usable_address_contract(endpoint) -> bool:
+    """One primary DesiredEndpoint is create-ready when it satisfies the first Proxmox contract.
+
+    `dhcp_reserved` requires a parseable desired IP, a non-empty DNS name, and
+    `generate_dnsmasq=True`. `static` requires only a parseable desired IP. `external` never
+    satisfies this contract.
+    """
+
+    if endpoint.ip_policy == "dhcp_reserved":
+        return (
+            _endpoint_has_usable_ip(endpoint)
+            and bool(str(endpoint.dns_name or "").strip())
+            and bool(endpoint.generate_dnsmasq)
+        )
+    if endpoint.ip_policy == "static":
+        return _endpoint_has_usable_ip(endpoint)
+    return False
+
+
 try:
     from django.core.exceptions import ValidationError
     from django.db import models
+    from django.db.models.fields.json import KeyTextTransform
+    from django.db.models.functions import Cast
     from django.urls import reverse
     from nautobot.apps.models import PrimaryModel, extras_features
+
+    from .compute_contract import (
+        CONFIG_SCHEMA_VERSION_V1,
+        ComputeContractError,
+        INSTANCE_KIND_CONTAINER,
+        INSTANCE_KIND_VIRTUAL_MACHINE,
+        MEMORY_MB_MAX,
+        MEMORY_MB_MIN,
+        POWER_STATE_RUNNING,
+        POWER_STATE_STOPPED,
+        PROVIDER_TYPE_PROXMOX,
+        ROOT_DISK_GB_MAX,
+        ROOT_DISK_GB_MIN,
+        VCPUS_MAX,
+        VCPUS_MIN,
+        effective_lifecycle,
+        effective_value,
+        is_actionable_lifecycle,
+        normalize_mac_address,
+        validate_config_schema_version,
+        validate_instance_config,
+        validate_memory_mb,
+        validate_platform_config,
+        validate_provider_type,
+        validate_root_disk_gb,
+        validate_vcpus,
+    )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     PrimaryModel = object  # type: ignore[assignment]
 else:
@@ -330,20 +379,6 @@ else:
             null=True,
             editable=False,
         )
-        realized_vm = models.ForeignKey(
-            "virtualization.VirtualMachine",
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-            related_name="intent_catalog_desired_nodes",
-        )
-        realized_vm_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("override", "Override")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
         notes = models.TextField(blank=True, null=True)
 
         RECONCILIATION_CONVERGED = "converged"
@@ -410,7 +445,7 @@ else:
                 )
 
             source_errors = {}
-            for relation_name in ("realized_device", "realized_vm"):
+            for relation_name in ("realized_device",):
                 relation_id = getattr(self, f"{relation_name}_id")
                 source = getattr(self, f"{relation_name}_source")
                 if bool(relation_id) != bool(source):
@@ -419,6 +454,19 @@ else:
                     )
             if source_errors:
                 raise ValidationError(source_errors)
+
+            if (
+                self.pk
+                and self.lifecycle == self.LIFECYCLE_RETIRED
+                and self.controlled_compute_platforms.exists()
+            ):
+                raise ValidationError(
+                    {
+                        "lifecycle": (
+                            "A DesiredNode that controls a DesiredComputePlatform cannot be retired."
+                        )
+                    }
+                )
 
 
     @extras_features("graphql")
@@ -475,6 +523,7 @@ else:
             choices=IP_POLICY_CHOICES,
             default=IP_POLICY_EXTERNAL,
         )
+        mac_address = models.CharField(max_length=17, blank=True, null=True)
         dns_name = models.CharField(max_length=255, blank=True, null=True)
         dns_name_source = models.CharField(
             max_length=16,
@@ -525,6 +574,11 @@ else:
                     fields=("desired_node", "name", "endpoint_type"),
                     name="nic_unique_endpoint_per_node_type",
                 ),
+                models.UniqueConstraint(
+                    fields=("mac_address",),
+                    condition=models.Q(mac_address__isnull=False),
+                    name="nic_unique_desired_mac_address",
+                ),
             )
 
         def __str__(self) -> str:
@@ -547,8 +601,351 @@ else:
                     errors[f"{value_name}_source"] = (
                         f"{value_name}_source must be set exactly when {value_name} is set."
                     )
+            try:
+                self.mac_address = normalize_mac_address(self.mac_address)
+            except ComputeContractError as exc:
+                errors["mac_address"] = str(exc)
             if errors:
                 raise ValidationError(errors)
+
+
+    @extras_features("graphql")
+    class DesiredComputePlatform(PrimaryModel):
+        """A Proxmox scope capable of realizing desired compute instances."""
+
+        PROVIDER_TYPE_PROXMOX = PROVIDER_TYPE_PROXMOX
+        PROVIDER_TYPE_CHOICES = ((PROVIDER_TYPE_PROXMOX, "Proxmox"),)
+
+        LIFECYCLE_PLANNED = "planned"
+        LIFECYCLE_APPROVED = "approved"
+        LIFECYCLE_ACTIVE = "active"
+        LIFECYCLE_DEPRECATED = "deprecated"
+        LIFECYCLE_RETIRED = "retired"
+        LIFECYCLE_CHOICES = (
+            (LIFECYCLE_PLANNED, "Planned"),
+            (LIFECYCLE_APPROVED, "Approved"),
+            (LIFECYCLE_ACTIVE, "Active"),
+            (LIFECYCLE_DEPRECATED, "Deprecated"),
+            (LIFECYCLE_RETIRED, "Retired"),
+        )
+
+        name = models.CharField(max_length=255)
+        slug = models.SlugField(max_length=255, unique=True)
+        provider_type = models.CharField(
+            max_length=32,
+            choices=PROVIDER_TYPE_CHOICES,
+            default=PROVIDER_TYPE_PROXMOX,
+        )
+        lifecycle = models.CharField(
+            max_length=64,
+            choices=LIFECYCLE_CHOICES,
+            default=LIFECYCLE_ACTIVE,
+        )
+        control_node = models.ForeignKey(
+            DesiredNode,
+            on_delete=models.PROTECT,
+            related_name="controlled_compute_platforms",
+        )
+        config_schema_version = models.CharField(
+            max_length=16,
+            default=CONFIG_SCHEMA_VERSION_V1,
+            editable=False,
+        )
+        config = models.JSONField(default=dict, blank=True)
+        realized_cluster = models.ForeignKey(
+            "virtualization.Cluster",
+            on_delete=models.SET_NULL,
+            blank=True,
+            null=True,
+            related_name="intent_catalog_desired_compute_platforms",
+        )
+        realized_cluster_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("override", "Override")),
+            blank=True,
+            null=True,
+            editable=False,
+        )
+
+        class Meta:
+            ordering = ("name",)
+            verbose_name = "desired compute platform"
+            verbose_name_plural = "desired compute platforms"
+            constraints = (
+                models.CheckConstraint(
+                    check=models.Q(provider_type="proxmox"),
+                    name="dcp_provider_type_proxmox",
+                ),
+                models.CheckConstraint(
+                    check=models.Q(config_schema_version="v1"),
+                    name="dcp_config_schema_v1",
+                ),
+                models.CheckConstraint(
+                    check=models.expressions.RawSQL(
+                        "jsonb_typeof(config) = 'object'",
+                        (),
+                        output_field=models.BooleanField(),
+                    ),
+                    name="dcp_config_object",
+                ),
+            )
+
+        def __str__(self) -> str:
+            return self.name
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:desiredcomputeplatform", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            try:
+                validate_provider_type(self.provider_type)
+            except ComputeContractError as exc:
+                errors["provider_type"] = str(exc)
+
+            try:
+                self.config_schema_version = validate_config_schema_version(
+                    self.config_schema_version or None
+                )
+            except ComputeContractError as exc:
+                errors["config_schema_version"] = str(exc)
+
+            try:
+                self.config = validate_platform_config(self.config)
+            except ComputeContractError as exc:
+                errors["config"] = str(exc)
+
+            if self.control_node_id and self.control_node.lifecycle == DesiredNode.LIFECYCLE_RETIRED:
+                errors["control_node"] = "The control node must not be retired."
+
+            if bool(self.realized_cluster_id) != bool(self.realized_cluster_source):
+                errors["realized_cluster_source"] = (
+                    "realized_cluster_source must be set exactly when realized_cluster is set."
+                )
+
+            if errors:
+                raise ValidationError(errors)
+
+
+    def _resolve_compute_effective_value(instance, *, instance_key, platform_key):
+        instance_config = instance.config or {}
+        platform_config = instance.platform.config or {} if instance.platform_id else {}
+        return effective_value(
+            instance_value=instance_config.get(instance_key),
+            platform_value=platform_config.get(platform_key),
+        )
+
+
+    def validate_compute_instance_topology(instance) -> str:
+        """Shared service/model-boundary validator for one DesiredComputeInstance.
+
+        Called from `DesiredComputeInstance.clean()` and from every other supported write path
+        (forms, REST, YAML import) that can change node/platform/endpoint/instance state affecting
+        compute topology, per plan Section 5.5. Returns the effective lifecycle. A
+        planned/deprecated/retired instance is a non-actionable draft and is not further checked;
+        an active/approved instance must resolve effective storage/bridge and exactly one
+        NIC-bearing primary endpoint with a canonical desired MAC.
+        """
+
+        node = instance.desired_node
+        platform = instance.platform
+        effective = effective_lifecycle(node.lifecycle, platform.lifecycle)
+        if not is_actionable_lifecycle(effective):
+            return effective
+
+        problems = []
+        storage = _resolve_compute_effective_value(
+            instance, instance_key="storage", platform_key="default_storage"
+        )
+        bridge = _resolve_compute_effective_value(
+            instance, instance_key="bridge", platform_key="default_bridge"
+        )
+        if storage["provenance"] == "unresolved":
+            problems.append("effective storage is unresolved")
+        if bridge["provenance"] == "unresolved":
+            problems.append("effective bridge is unresolved")
+
+        candidates = [
+            endpoint
+            for endpoint in node.desired_endpoints.all()
+            if endpoint.endpoint_type == "primary"
+            and endpoint.mac_address
+            and str(endpoint.mdns_name or "").strip()
+            and _endpoint_has_usable_address_contract(endpoint)
+        ]
+        if len(candidates) == 0:
+            problems.append("compute_primary_endpoint_missing")
+        elif len(candidates) > 1:
+            problems.append("compute_primary_endpoint_ambiguous")
+
+        if problems:
+            raise ValidationError({"__all__": problems})
+        return effective
+
+
+    @extras_features("graphql")
+    class DesiredComputeInstance(PrimaryModel):
+        """The compute realization required by exactly one DesiredNode."""
+
+        INSTANCE_KIND_CONTAINER = INSTANCE_KIND_CONTAINER
+        INSTANCE_KIND_VIRTUAL_MACHINE = INSTANCE_KIND_VIRTUAL_MACHINE
+        INSTANCE_KIND_CHOICES = (
+            (INSTANCE_KIND_CONTAINER, "Container"),
+            (INSTANCE_KIND_VIRTUAL_MACHINE, "Virtual machine"),
+        )
+
+        POWER_STATE_RUNNING = POWER_STATE_RUNNING
+        POWER_STATE_STOPPED = POWER_STATE_STOPPED
+        POWER_STATE_CHOICES = (
+            (POWER_STATE_RUNNING, "Running"),
+            (POWER_STATE_STOPPED, "Stopped"),
+        )
+
+        desired_node = models.OneToOneField(
+            DesiredNode,
+            on_delete=models.CASCADE,
+            related_name="desired_compute_instance",
+        )
+        platform = models.ForeignKey(
+            DesiredComputePlatform,
+            on_delete=models.PROTECT,
+            related_name="desired_compute_instances",
+        )
+        instance_kind = models.CharField(max_length=32, choices=INSTANCE_KIND_CHOICES)
+        desired_power_state = models.CharField(
+            max_length=16,
+            choices=POWER_STATE_CHOICES,
+            default=POWER_STATE_RUNNING,
+        )
+        vcpus = models.PositiveIntegerField()
+        memory_mb = models.PositiveIntegerField()
+        root_disk_gb = models.PositiveIntegerField()
+        config_schema_version = models.CharField(
+            max_length=16,
+            default=CONFIG_SCHEMA_VERSION_V1,
+            editable=False,
+        )
+        config = models.JSONField(default=dict, blank=True)
+        realized_vm = models.ForeignKey(
+            "virtualization.VirtualMachine",
+            on_delete=models.SET_NULL,
+            blank=True,
+            null=True,
+            related_name="intent_catalog_desired_compute_instances",
+        )
+        realized_vm_source = models.CharField(
+            max_length=16,
+            choices=(("derived", "Derived"), ("override", "Override")),
+            blank=True,
+            null=True,
+            editable=False,
+        )
+
+        class Meta:
+            ordering = ("desired_node__name",)
+            verbose_name = "desired compute instance"
+            verbose_name_plural = "desired compute instances"
+            constraints = (
+                models.CheckConstraint(
+                    check=models.Q(vcpus__gte=VCPUS_MIN) & models.Q(vcpus__lte=VCPUS_MAX),
+                    name="dci_vcpus_bounds",
+                ),
+                models.CheckConstraint(
+                    check=models.Q(memory_mb__gte=MEMORY_MB_MIN) & models.Q(memory_mb__lte=MEMORY_MB_MAX),
+                    name="dci_memory_mb_bounds",
+                ),
+                models.CheckConstraint(
+                    check=models.Q(root_disk_gb__gte=ROOT_DISK_GB_MIN)
+                    & models.Q(root_disk_gb__lte=ROOT_DISK_GB_MAX),
+                    name="dci_root_disk_gb_bounds",
+                ),
+                models.CheckConstraint(
+                    check=models.Q(config_schema_version="v1"),
+                    name="dci_config_schema_v1",
+                ),
+                models.CheckConstraint(
+                    check=models.expressions.RawSQL(
+                        "jsonb_typeof(config) = 'object'",
+                        (),
+                        output_field=models.BooleanField(),
+                    ),
+                    name="dci_config_object",
+                ),
+                models.UniqueConstraint(
+                    "platform",
+                    Cast(
+                        KeyTextTransform("vmid", "config"),
+                        output_field=models.BigIntegerField(),
+                    ),
+                    condition=models.Q(config__has_key="vmid"),
+                    name="dci_unique_platform_vmid",
+                ),
+            )
+
+        def __str__(self) -> str:
+            return f"{self.desired_node}: {self.instance_kind}"
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:desiredcomputeinstance", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            try:
+                self.vcpus = validate_vcpus(self.vcpus)
+            except ComputeContractError as exc:
+                errors["vcpus"] = str(exc)
+            try:
+                self.memory_mb = validate_memory_mb(self.memory_mb)
+            except ComputeContractError as exc:
+                errors["memory_mb"] = str(exc)
+            try:
+                self.root_disk_gb = validate_root_disk_gb(self.root_disk_gb)
+            except ComputeContractError as exc:
+                errors["root_disk_gb"] = str(exc)
+            try:
+                self.config_schema_version = validate_config_schema_version(
+                    self.config_schema_version or None
+                )
+            except ComputeContractError as exc:
+                errors["config_schema_version"] = str(exc)
+            try:
+                self.config = validate_instance_config(self.config, instance_kind=self.instance_kind)
+            except ComputeContractError as exc:
+                errors["config"] = str(exc)
+
+            if bool(self.realized_vm_id) != bool(self.realized_vm_source):
+                errors["realized_vm_source"] = (
+                    "realized_vm_source must be set exactly when realized_vm is set."
+                )
+
+            if not errors and self.realized_vm_id:
+                platform = self.platform
+                vm = self.realized_vm
+                if not platform.realized_cluster_id or vm.cluster_id != platform.realized_cluster_id:
+                    errors["realized_vm"] = (
+                        "realized_vm must belong to the platform's realized_cluster."
+                    )
+                expected_guest_type = {
+                    self.INSTANCE_KIND_CONTAINER: "lxc",
+                    self.INSTANCE_KIND_VIRTUAL_MACHINE: "qemu",
+                }[self.instance_kind]
+                actual_guest_type = (vm.custom_field_data or {}).get("proxmox_guest_type")
+                if actual_guest_type != expected_guest_type:
+                    errors["realized_vm"] = (
+                        f"realized_vm proxmox_guest_type must be {expected_guest_type!r}."
+                    )
+                requested_vmid = (self.config or {}).get("vmid")
+                actual_vmid = (vm.custom_field_data or {}).get("proxmox_vmid")
+                if requested_vmid is not None and requested_vmid != actual_vmid:
+                    errors["realized_vm"] = "requested config.vmid must equal realized_vm proxmox_vmid."
+
+            if errors:
+                raise ValidationError(errors)
+
+            if self.desired_node_id and self.platform_id:
+                validate_compute_instance_topology(self)
 
 
     @extras_features("graphql")

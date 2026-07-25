@@ -49,9 +49,6 @@ class DesiredNodeSerializer(NautobotModelSerializer):
     realized_device_source = serializers.ChoiceField(
         choices=("derived", "override"), required=False, allow_null=True
     )
-    realized_vm_source = serializers.ChoiceField(
-        choices=("derived", "override"), required=False, allow_null=True
-    )
 
     class Meta:
         model = DesiredNode
@@ -59,7 +56,7 @@ class DesiredNodeSerializer(NautobotModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        for relation_name in ("realized_device", "realized_vm"):
+        for relation_name in ("realized_device",):
             if relation_name in attrs:
                 source_name = f"{relation_name}_source"
                 if attrs[relation_name] is None:

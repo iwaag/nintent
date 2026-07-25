@@ -159,7 +159,6 @@ else:
         name = tables.LinkColumn()
         intent_source = tables.LinkColumn()
         realized_device = tables.LinkColumn()
-        realized_vm = tables.LinkColumn()
         endpoint_count = tables.Column(empty_values=(), verbose_name="Endpoints")
         reconciliation_status = tables.Column(empty_values=(), verbose_name="Reconciliation")
         actions = ButtonsColumn(DesiredNode, buttons=TABLE_ACTION_BUTTONS)
@@ -185,7 +184,6 @@ else:
                 "role",
                 "intent_source",
                 "realized_device",
-                "realized_vm",
                 "endpoint_count",
                 "reconciliation_status",
                 "actions",
