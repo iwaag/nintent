@@ -6,24 +6,21 @@ from rest_framework import serializers
 from ..models import (
     AlignmentReview,
     BrainDumpDocument,
-    DesiredComputeInstance,
-    DesiredComputePlatform,
-    DesiredEndpoint,
     DesiredNode,
-    DesiredService,
-    IntentSource,
 )
 
 
-class BrainDumpDocumentSerializer(NautobotModelSerializer):
-    """Serializer for Braindump documents.
+def _check_allowed_mutation_keys(data: dict, allowed_keys: set[str], operation: str = "mutation") -> None:
+    if not isinstance(data, dict):
+        return
+    unallowed = set(data.keys()) - allowed_keys
+    if unallowed:
+        errors = {key: f"Field '{key}' is not writable for {operation}." for key in sorted(unallowed)}
+        raise serializers.ValidationError(errors)
 
-    ``title``/``body`` disable DRF's default ``trim_whitespace`` so accepted prose is
-    preserved byte-for-byte (the model's ``clean()``, run via ``ValidatedModelSerializer``,
-    still rejects whitespace-only input). ``authorship`` has no serializer default, so it is
-    required on create; a ``PATCH`` may still omit an unchanged value, per DRF's normal
-    partial-update semantics.
-    """
+
+class BrainDumpDocumentSerializer(NautobotModelSerializer):
+    """Serializer for Braindump documents."""
 
     title = serializers.CharField(max_length=255, trim_whitespace=False)
     body = serializers.CharField(trim_whitespace=False)
@@ -31,29 +28,41 @@ class BrainDumpDocumentSerializer(NautobotModelSerializer):
 
     class Meta:
         model = BrainDumpDocument
-        fields = "__all__"
+        fields = ("id", "title", "body", "authorship", "created", "last_updated")
+        read_only_fields = ("id", "created", "last_updated")
+
+    def to_internal_value(self, data):
+        allowed = {"title", "body", "authorship"}
+        _check_allowed_mutation_keys(data, allowed, "BrainDumpDocument mutation")
+        return super().to_internal_value(data)
 
 
 class AlignmentReviewSerializer(NautobotModelSerializer):
-    """Serializer for one Braindump's current Alignment Review.
-
-    ``braindump`` is a plain UUID primary-key relation, not a nested write.
-    ``summary`` disables ``trim_whitespace`` for the same byte-for-byte reason as
-    ``BrainDumpDocumentSerializer``. The one-review-per-Braindump uniqueness is enforced by
-    the model's ``OneToOneField`` and surfaces as DRF's normal unique-together validation
-    error on a duplicate create.
-    """
+    """Serializer for one Braindump's current Alignment Review."""
 
     braindump = serializers.PrimaryKeyRelatedField(queryset=BrainDumpDocument.objects.all())
     summary = serializers.CharField(trim_whitespace=False)
 
     class Meta:
         model = AlignmentReview
-        fields = "__all__"
+        fields = ("id", "braindump", "summary", "created", "last_updated")
+        read_only_fields = ("id", "created", "last_updated")
+
+    def to_internal_value(self, data):
+        if self.instance is None:
+            allowed = {"braindump", "summary"}
+        else:
+            allowed = {"summary"}
+        _check_allowed_mutation_keys(data, allowed, "AlignmentReview mutation")
+        return super().to_internal_value(data)
 
 
 class DesiredNodeSerializer(NautobotModelSerializer):
-    """Serializer for desired node intent."""
+    """Serializer for desired node intent.
+    
+    Only lifecycle, realized_device, and realized_device_source are writable.
+    All other fields are read-only.
+    """
 
     realized_device_source = serializers.ChoiceField(
         choices=("derived", "override"), required=False, allow_null=True
@@ -61,7 +70,24 @@ class DesiredNodeSerializer(NautobotModelSerializer):
 
     class Meta:
         model = DesiredNode
-        fields = "__all__"
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "node_type",
+            "lifecycle",
+            "role",
+            "realized_device",
+            "realized_device_source",
+            "created",
+            "last_updated",
+        )
+        read_only_fields = ("id", "name", "slug", "node_type", "role", "created", "last_updated")
+
+    def to_internal_value(self, data):
+        allowed = {"lifecycle", "realized_device", "realized_device_source"}
+        _check_allowed_mutation_keys(data, allowed, "DesiredNode mutation")
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -82,93 +108,3 @@ class DesiredNodeSerializer(NautobotModelSerializer):
                     {f"{relation_name}_source": f"Source must be set exactly when {relation_name} is set."}
                 )
         return attrs
-
-
-class DesiredServiceSerializer(NautobotModelSerializer):
-    """Serializer for desired service intent.
-
-    ``intent_source`` is declared as a plain ID-based related field rather than
-    left to ``fields = "__all__"``'s default hyperlink, which tries to resolve
-    a non-existent ``intentsource-detail`` route (no IntentSource viewset is
-    registered -- see ``api/urls.py``) and breaks every GET/list/PATCH once a
-    service has a non-null ``intent_source``. ``analysis_provenance`` and
-    ``last_analyzed_at`` are Job-derived and read-only.
-    """
-
-    intent_source = serializers.PrimaryKeyRelatedField(queryset=IntentSource.objects.all())
-
-    class Meta:
-        model = DesiredService
-        fields = "__all__"
-        read_only_fields = ("analysis_provenance", "last_analyzed_at")
-
-
-class DesiredEndpointSerializer(NautobotModelSerializer):
-    """Serializer for desired endpoint intent."""
-
-    dns_name_source = serializers.ChoiceField(
-        choices=("derived", "intent"), required=False, allow_null=True
-    )
-    mdns_name_source = serializers.ChoiceField(
-        choices=("derived", "intent"), required=False, allow_null=True
-    )
-    realized_ip_address_source = serializers.ChoiceField(
-        choices=("derived", "override"), required=False, allow_null=True
-    )
-
-    class Meta:
-        model = DesiredEndpoint
-        fields = "__all__"
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        for value_name in ("dns_name", "mdns_name", "realized_ip_address"):
-            source_name = f"{value_name}_source"
-            if value_name in attrs:
-                if attrs[value_name] is None or attrs[value_name] == "":
-                    attrs[source_name] = None
-                elif source_name not in attrs:
-                    attrs[source_name] = "override" if value_name == "realized_ip_address" else "intent"
-            value = attrs.get(value_name, getattr(self.instance, value_name, None))
-            source = attrs.get(source_name, getattr(self.instance, source_name, None))
-            if bool(value) != bool(source):
-                raise serializers.ValidationError(
-                    {source_name: f"Source must be set exactly when {value_name} is set."}
-                )
-        return attrs
-
-
-class DesiredComputePlatformSerializer(NautobotModelSerializer):
-    """Serializer for desired compute platform intent.
-
-    ``realized_cluster``/``realized_cluster_source`` are Phase 3 read-only: the model field
-    itself has no ``editable=False``, so they are listed explicitly in ``read_only_fields``
-    rather than relying on DRF's auto-detection. ``config_schema_version`` is declared
-    writable here (overriding DRF's auto-read-only mapping for the model's
-    ``editable=False`` field) so an explicit non-``v1`` value is rejected by
-    ``full_clean()`` on save, while an omitted value keeps the model default of ``v1`` --
-    matching UI/YAML parity.
-    """
-
-    config_schema_version = serializers.CharField(required=False, allow_null=True)
-
-    class Meta:
-        model = DesiredComputePlatform
-        fields = "__all__"
-        read_only_fields = ("realized_cluster", "realized_cluster_source")
-
-
-class DesiredComputeInstanceSerializer(NautobotModelSerializer):
-    """Serializer for desired compute instance intent.
-
-    ``realized_vm``/``realized_vm_source`` are Phase 3 read-only for the same reason as
-    ``DesiredComputePlatformSerializer.realized_cluster``. There is no lifecycle field to
-    guard: effective lifecycle is always derived from the owning node and platform.
-    """
-
-    config_schema_version = serializers.CharField(required=False, allow_null=True)
-
-    class Meta:
-        model = DesiredComputeInstance
-        fields = "__all__"
-        read_only_fields = ("realized_vm", "realized_vm_source")

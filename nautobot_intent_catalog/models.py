@@ -79,7 +79,6 @@ except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in loc
     PrimaryModel = object  # type: ignore[assignment]
 else:
 
-    @extras_features("graphql")
     class IntentSource(PrimaryModel):
         """Input source record used for intent import and analysis."""
 

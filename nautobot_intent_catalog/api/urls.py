@@ -6,10 +6,6 @@ from . import views
 
 router = OrderedDefaultRouter(view_name="Intent Catalog")
 router.register("nodes", views.DesiredNodeViewSet)
-router.register("services", views.DesiredServiceViewSet)
-router.register("endpoints", views.DesiredEndpointViewSet)
-router.register("compute-platforms", views.DesiredComputePlatformViewSet)
-router.register("compute-instances", views.DesiredComputeInstanceViewSet)
 router.register("braindumps", views.BrainDumpDocumentViewSet)
 router.register("alignment-reviews", views.AlignmentReviewViewSet)
 
