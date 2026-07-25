@@ -195,29 +195,6 @@ else:
         notes = models.TextField(blank=True, null=True)
         last_analyzed_at = models.DateTimeField(blank=True, null=True)
 
-        RECONCILIATION_CONVERGED = "converged"
-        RECONCILIATION_DRIFTING = "drifting"
-        RECONCILIATION_CONVERGING = "converging"
-        RECONCILIATION_UNKNOWN = "unknown"
-        RECONCILIATION_STATUS_CHOICES = (
-            (RECONCILIATION_CONVERGED, "Converged"),
-            (RECONCILIATION_DRIFTING, "Drifting"),
-            (RECONCILIATION_CONVERGING, "Converging"),
-            (RECONCILIATION_UNKNOWN, "Unknown"),
-        )
-
-        reconciliation_status = models.CharField(
-            max_length=32,
-            choices=RECONCILIATION_STATUS_CHOICES,
-            blank=True,
-            help_text="Derived cache of the last nctl dashboard run. Written by nctl over REST; not editable here.",
-        )
-        reconciliation_checked_at = models.DateTimeField(
-            blank=True,
-            null=True,
-            help_text="Timestamp of the last nctl dashboard run that wrote reconciliation_status.",
-        )
-
         class Meta:
             ordering = ("name",)
             verbose_name = "desired service"
@@ -380,29 +357,6 @@ else:
             editable=False,
         )
         notes = models.TextField(blank=True, null=True)
-
-        RECONCILIATION_CONVERGED = "converged"
-        RECONCILIATION_DRIFTING = "drifting"
-        RECONCILIATION_CONVERGING = "converging"
-        RECONCILIATION_UNKNOWN = "unknown"
-        RECONCILIATION_STATUS_CHOICES = (
-            (RECONCILIATION_CONVERGED, "Converged"),
-            (RECONCILIATION_DRIFTING, "Drifting"),
-            (RECONCILIATION_CONVERGING, "Converging"),
-            (RECONCILIATION_UNKNOWN, "Unknown"),
-        )
-
-        reconciliation_status = models.CharField(
-            max_length=32,
-            choices=RECONCILIATION_STATUS_CHOICES,
-            blank=True,
-            help_text="Derived cache of the last nctl dashboard run. Written by nctl over REST; not editable here.",
-        )
-        reconciliation_checked_at = models.DateTimeField(
-            blank=True,
-            null=True,
-            help_text="Timestamp of the last nctl dashboard run that wrote reconciliation_status.",
-        )
 
         class Meta:
             ordering = ("name",)
