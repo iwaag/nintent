@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,40 @@ from nautobot_intent_catalog.loaders import (
     DEFAULT_CATALOG_PATHS,
     load_intent_sources,
 )
+
+
+def _first_existing_canonical_intent_sources_path() -> Path | None:
+    """Locate the checked-in canonical YAML across every environment this suite runs in.
+
+    A single hardcoded path breaks depending on how nintent was installed: a local repo
+    checkout (`nauto/` is a fixed number of parents above this file), the deployed image
+    (baked in at the `PLUGINS_CONFIG`/`NAUTOBOT_INTENT_SOURCES_FILE`-configured path), or a
+    plain `pip install` with neither (no reachable copy at all, so the test must skip rather
+    than assert a false negative about file content).
+    """
+
+    candidates: list[Path] = []
+
+    env_override = os.environ.get("NAUTOBOT_INTENT_SOURCES_FILE")
+    if env_override:
+        candidates.append(Path(env_override))
+
+    try:
+        from django.conf import settings
+
+        plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
+        configured = plugins_config.get("nautobot_intent_catalog", {}).get("intent_sources_file")
+        if configured:
+            candidates.append(Path(configured))
+    except Exception:
+        pass
+
+    candidates.append(Path(__file__).resolve().parents[3] / "nauto" / "seed" / "intent_sources.yaml")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 class LoaderTests(unittest.TestCase):
@@ -1167,11 +1202,18 @@ class EndpointDnsMdnsOmissionTests(unittest.TestCase):
 class CanonicalFileIdentityCountTests(unittest.TestCase):
     """Plan.md Section 4.2/Step 1 item 3: the checked-in `nauto/seed/intent_sources.yaml` must
     load with zero errors and contain exactly the confirmed Phase 0 identity set. This test
-    reads the real checked-in file, so it fails until Step 2 rewrites it."""
+    reads the real checked-in file wherever this environment can reach it (local checkout,
+    or the deployed image's baked-in copy); it skips if neither is reachable."""
 
-    _CANONICAL_PATH = Path(__file__).resolve().parents[3] / "nauto" / "seed" / "intent_sources.yaml"
+    _CANONICAL_PATH = _first_existing_canonical_intent_sources_path()
 
     def test_canonical_checked_in_file_matches_exact_confirmed_counts(self) -> None:
+        if self._CANONICAL_PATH is None:
+            self.skipTest(
+                "no reachable canonical intent_sources.yaml: neither NAUTOBOT_INTENT_SOURCES_FILE, "
+                "PLUGINS_CONFIG['nautobot_intent_catalog']['intent_sources_file'], nor a local "
+                "checkout's nauto/seed/intent_sources.yaml exists in this environment"
+            )
         result = load_intent_sources(self._CANONICAL_PATH)
 
         self.assertEqual(result.errors, [])
