@@ -265,26 +265,20 @@ and writes the validated production inventory and companion report.
 
 ## REST API
 
-`DesiredNode`, `DesiredEndpoint`, and `DesiredService` are exposed read/write through Nautobot's
-REST API so both humans and agents can query desired state without going
-through the UI or a Django shell:
+Canonical domain reads use Nautobot GraphQL (`query { desired_nodes ... }`).
+Nautobot's REST API is retained only for narrow mutation workflows on three collections:
 
 ```text
-GET  /api/plugins/intent-catalog/nodes/
-GET  /api/plugins/intent-catalog/nodes/<uuid>/
-GET  /api/plugins/intent-catalog/endpoints/
-GET  /api/plugins/intent-catalog/endpoints/<uuid>/
-GET  /api/plugins/intent-catalog/services/
-GET  /api/plugins/intent-catalog/services/<uuid>/
+GET, PATCH        /api/plugins/intent-catalog/nodes/<uuid>/
+GET, POST         /api/plugins/intent-catalog/braindumps/
+GET, PATCH, DELETE /api/plugins/intent-catalog/braindumps/<uuid>/
+GET, POST         /api/plugins/intent-catalog/alignment-reviews/
+GET, PATCH, DELETE /api/plugins/intent-catalog/alignment-reviews/<uuid>/
 ```
 
-Standard Nautobot REST conventions apply: authenticate with
-`Authorization: Token <api-token>`, use `POST`/`PATCH`/`DELETE` for writes, and
-filter with the same fields exposed by `DesiredNodeFilterSet`,
-`DesiredEndpointFilterSet`, and `DesiredServiceFilterSet` (for example
-`?slug=agstudio` or `?desired_node=<uuid>`). Other models such as
-`DesiredServicePlacement` are not yet exposed through the REST API and remain
-GraphQL-read/UI/ORM-managed for now.
+- `nodes`: POST, PUT, DELETE, and bulk mutations return `405 Method Not Allowed`. Writable fields on detail PATCH are strictly limited to `lifecycle`, `realized_device`, and `realized_device_source`.
+- `services`, `endpoints`, `compute-platforms`, and `compute-instances` REST collections are deleted (`404 Not Found`). Domain reads for these models use GraphQL.
+- Unallowed, system, or read-only mutation keys return `400 Bad Request`. Standard Nautobot REST conventions apply: authenticate with `Authorization: Token <api-token>`.
 
 ## Braindump and Alignment Review
 
