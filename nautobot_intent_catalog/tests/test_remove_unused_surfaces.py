@@ -184,17 +184,20 @@ else:
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     class NavigationTests(TestCase):
-        """Item 8: navigation retains Quick Host Add and has no nctl Dashboard item."""
+        """Item 8: navigation has no Quick Host Add, Source YAML, or Operational Tools group."""
 
-        def test_operational_tools_group_has_quick_host_add_and_no_dashboard_item(self):
+        def test_navigation_has_no_operational_tools_quick_host_add_or_source_yaml(self):
             tab = navigation.menu_items[0]
-            operational_tools = next(g for g in tab.groups if g.name == "Operational Tools")
-            item_names = [item.name for item in operational_tools.items]
-            self.assertIn("Quick Host Add", item_names)
-            self.assertNotIn("nctl Dashboard", item_names)
+            group_names = [g.name for g in tab.groups]
+            self.assertNotIn("Operational Tools", group_names)
+            desired_state_group = next(g for g in tab.groups if g.name == "Desired State")
+            ds_item_names = [item.name for item in desired_state_group.items]
+            self.assertNotIn("Source YAML", ds_item_names)
+            self.assertNotIn("Quick Host Add", ds_item_names)
 
         def test_navigation_module_has_no_dashboard_url_helper(self):
             self.assertFalse(hasattr(navigation, "_configured_dashboard_url"))
+
 
     class AppConfigTests(TestCase):
         """Item 9: App defaults contain no dashboard_url."""

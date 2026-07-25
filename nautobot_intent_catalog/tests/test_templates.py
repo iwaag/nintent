@@ -33,26 +33,6 @@ class ObjectViewTemplateTests(unittest.TestCase):
 
         self.assertEqual(missing_templates, [])
 
-    def test_form_view_templates_exist(self) -> None:
-        template_dir = (
-            Path(__file__).resolve().parents[1]
-            / "templates"
-            / "nautobot_intent_catalog"
-        )
-        # FormView templates are referenced by template_name, not by the generic
-        # ObjectView lookup, so guard them explicitly against accidental removal.
-        expected_templates = {
-            "desiredhost_quick_add.html",
-        }
-
-        missing_templates = sorted(
-            template_name
-            for template_name in expected_templates
-            if not (template_dir / template_name).is_file()
-        )
-
-        self.assertEqual(missing_templates, [])
-
 
 if __name__ == "__main__":
     unittest.main()

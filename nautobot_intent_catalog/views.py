@@ -1,10 +1,5 @@
 """Views for the Nautobot Intent Catalog App."""
 
-from django.conf import settings
-from django.shortcuts import render
-
-from .loaders import load_default_intent_sources
-
 try:
     from nautobot.apps.views import ObjectListView, ObjectView
 
@@ -243,34 +238,3 @@ else:
         """Show one Braindump and its current Alignment Review, in separate panels."""
 
         queryset = BrainDumpDocument.objects.select_related("alignment_review")
-
-
-def source_yaml_intent_source_list(request):
-    """Render the configured intent source input list directly from YAML."""
-
-    result = load_default_intent_sources(_configured_source_file())
-    return render(
-        request,
-        "nautobot_intent_catalog/source_yaml_list.html",
-        {
-            "source_path": result.source_path,
-            "intent_sources": result.intent_sources,
-            "desired_nodes": result.desired_nodes,
-            "desired_ip_ranges": result.desired_ip_ranges,
-            "desired_endpoints": result.desired_endpoints,
-            "desired_compute_platforms": result.desired_compute_platforms,
-            "desired_compute_instances": result.desired_compute_instances,
-            "desired_service_placements": result.desired_service_placements,
-            "desired_node_operational_overrides": result.desired_node_operational_overrides,
-            "errors": result.errors,
-        },
-    )
-
-
-source_yaml_list = source_yaml_intent_source_list
-
-
-def _configured_source_file():
-    plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
-    app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
-    return app_config.get("intent_sources_file")

@@ -1,6 +1,5 @@
 """Use-case operations for Intent Catalog workflows."""
 
-from .hosts import DesiredHostCreationResult, create_desired_node_with_primary_endpoint
 from .ipam import (
     IPAMReconcilePlan,
     build_ipam_reconcile_summary,
@@ -9,10 +8,8 @@ from .ipam import (
 )
 
 __all__ = (
-    "DesiredHostCreationResult",
     "IPAMReconcilePlan",
     "build_ipam_reconcile_summary",
-    "create_desired_node_with_primary_endpoint",
     "ip_address_create_fields",
     "plan_endpoint_ipam_reconcile",
 )

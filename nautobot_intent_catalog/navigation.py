@@ -1,4 +1,7 @@
-"""Navigation items for the Nautobot Intent Catalog App."""
+"""Navigation items for the Nautobot Intent Catalog App.
+
+Only contains links to the eleven retained read-only list pages.
+"""
 
 try:
     from nautobot.apps.ui import NavMenuGroup, NavMenuItem, NavMenuTab
@@ -62,20 +65,6 @@ else:
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirediprange_list",
                             name="Desired IP Ranges",
-                        ),
-                        NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:source_yaml_list",
-                            name="Source YAML",
-                        ),
-                    ),
-                ),
-                NavMenuGroup(
-                    name="Operational Tools",
-                    weight=300,
-                    items=(
-                        NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:desiredhost_quick_add",
-                            name="Quick Host Add",
                         ),
                     ),
                 ),
