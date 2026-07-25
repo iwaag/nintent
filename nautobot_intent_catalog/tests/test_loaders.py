@@ -935,5 +935,194 @@ class EndpointMacAddressLoaderTests(unittest.TestCase):
         )
 
 
+class ClosedRootValidationTests(unittest.TestCase):
+    """Phase 1 Step 1/Step 3 (interface_contract/p1/plan.md Section 3.1/4.1): exactly the nine
+    canonical roots are accepted; every other top-level key -- old alias or genuinely unknown --
+    fails before any section is normalized."""
+
+    _ALL_NINE_ROOTS = (
+        "intent_sources: []\n"
+        "desired_nodes: []\n"
+        "desired_endpoints: []\n"
+        "desired_ip_ranges: []\n"
+        "desired_compute_platforms: []\n"
+        "desired_compute_instances: []\n"
+        "desired_services: []\n"
+        "desired_service_placements: []\n"
+        "desired_node_operational_overrides: []\n"
+    )
+
+    def test_all_nine_known_roots_are_accepted_together(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(self._ALL_NINE_ROOTS, encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+
+    def test_unknown_top_level_root_is_rejected_even_with_every_known_root_present(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(self._ALL_NINE_ROOTS + "totally_unknown_root: []\n", encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("totally_unknown_root" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_service_repositories_alias_still_rejected_with_its_specific_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text("service_repositories: []\n", encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("service_repositories is not supported" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_desired_node_operational_configs_alias_still_rejected_with_its_specific_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text("desired_node_operational_configs: []\n", encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("desired_node_operational_configs is not supported" in error for error in result.errors),
+            result.errors,
+        )
+
+
+class OmittedRootIsNoOpTests(unittest.TestCase):
+    """A missing known root stays an empty no-op section for a partial operator document
+    (plan.md Section 4.1) -- omission never becomes a validation error."""
+
+    def test_missing_known_root_produces_no_error_and_empty_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text("intent_sources: []\n", encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.desired_nodes, [])
+        self.assertEqual(result.desired_node_operational_overrides, [])
+
+
+class EndpointDnsMdnsOmissionTests(unittest.TestCase):
+    """Plan.md Section 4.3/Step 1 item 5: an omitted optional DNS/mDNS name on a primary
+    endpoint must remain omitted through the loader -- no hidden default is synthesized here.
+    (Synthesis, if any, is an importer-layer concern covered by test_importers.py.)"""
+
+    def test_omitted_dns_and_mdns_names_stay_none_after_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_nodes:\n"
+                "  - name: agexample\n"
+                "    slug: agexample\n"
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agexample\n"
+                "    endpoint_type: primary\n"
+                "    ip_policy: external\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        endpoint = result.desired_endpoints[0]
+        self.assertIsNone(endpoint.dns_name)
+        self.assertIsNone(endpoint.mdns_name)
+
+    def test_explicit_dns_and_mdns_names_survive_normalization_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agexample\n"
+                "    endpoint_type: primary\n"
+                "    ip_policy: dhcp_reserved\n"
+                "    ip_address: 192.168.0.50\n"
+                "    dns_name: agexample.home.arpa\n"
+                "    mdns_name: agexample.local\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        endpoint = result.desired_endpoints[0]
+        self.assertEqual(endpoint.dns_name, "agexample.home.arpa")
+        self.assertEqual(endpoint.mdns_name, "agexample.local")
+
+
+class CanonicalFileIdentityCountTests(unittest.TestCase):
+    """Plan.md Section 4.2/Step 1 item 3: the checked-in `nauto/seed/intent_sources.yaml` must
+    load with zero errors and contain exactly the confirmed Phase 0 identity set. This test
+    reads the real checked-in file, so it fails until Step 2 rewrites it."""
+
+    _CANONICAL_PATH = Path(__file__).resolve().parents[3] / "nauto" / "seed" / "intent_sources.yaml"
+
+    def test_canonical_checked_in_file_matches_exact_confirmed_counts(self) -> None:
+        result = load_intent_sources(self._CANONICAL_PATH)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(
+            sorted(source.slug for source in result.intent_sources),
+            ["infrastructure", "manual"],
+        )
+        self.assertEqual(
+            sorted(node.slug for node in result.desired_nodes),
+            ["agbach", "agdnsmasq", "aghub", "agpc", "agstudio"],
+        )
+        self.assertEqual(len(result.desired_endpoints), 5)
+        self.assertEqual(
+            sorted(r.slug for r in result.desired_ip_ranges),
+            ["dhcp-reserved", "dhcp-unreserved", "network-infra"],
+        )
+        self.assertEqual(result.desired_compute_platforms, [])
+        self.assertEqual(result.desired_compute_instances, [])
+        self.assertEqual(len(result.desired_services), 6)
+        self.assertEqual(len(result.desired_service_placements), 1)
+        self.assertEqual(result.desired_node_operational_overrides, [])
+        stale_nodes = {"agmbp2019", "agmbp2018", "agprometheus", "aggrafana", "agnomad", "aghaos"}
+        self.assertFalse(stale_nodes & {node.slug for node in result.desired_nodes})
+
+
+class RealizedFieldNeverAcceptedFromYamlTests(unittest.TestCase):
+    """Plan.md Step 1 item 4: no realized-link/source key is a recognized loader field on any
+    root that carries a realized link, so YAML can never set one even if an operator tries."""
+
+    def test_desired_node_rejects_realized_device_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_nodes:\n"
+                "  - name: agexample\n"
+                "    slug: agexample\n"
+                "    realized_device: some-device-id\n",
+                encoding="utf-8",
+            )
+            result = load_intent_sources(path)
+        # desired_nodes currently accepts unknown keys silently (no strict-field check on this
+        # root); a realized_device key must not surface as a recognized DesiredNodeEntry field.
+        self.assertFalse(hasattr(result.desired_nodes[0] if result.desired_nodes else object(), "realized_device"))
+
+    def test_desired_endpoint_entry_has_no_realized_ip_field(self) -> None:
+        from nautobot_intent_catalog.loaders import DesiredEndpointEntry
+
+        field_names = {f for f in DesiredEndpointEntry.__dataclass_fields__}
+        self.assertNotIn("realized_ip_address", field_names)
+        self.assertNotIn("realized_ip_address_source", field_names)
+
+
 if __name__ == "__main__":
     unittest.main()

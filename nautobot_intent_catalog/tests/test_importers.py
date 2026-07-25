@@ -610,5 +610,194 @@ class ImporterTests(unittest.TestCase):
         )
 
 
+class OwnershipSplitTests(unittest.TestCase):
+    """Plan.md Section 5.3/Step 1 items 6-9: existing-row updates must touch only the
+    YAML-owned subset of fields. These target new functions added in Step 4; they fail with
+    ImportError against the pre-Phase-1 `importers` module."""
+
+    def test_desired_node_update_fields_excludes_lifecycle(self) -> None:
+        from nautobot_intent_catalog.importers import desired_node_update_fields
+
+        node = DesiredNodeEntry(name="agexample", slug="agexample", lifecycle="active")
+        update_fields = desired_node_update_fields(node)
+
+        self.assertNotIn("lifecycle", update_fields)
+        self.assertIn("name", update_fields)
+        self.assertNotIn("realized_device", update_fields)
+        self.assertNotIn("realized_device_source", update_fields)
+
+    def test_desired_node_create_defaults_still_includes_lifecycle(self) -> None:
+        node = DesiredNodeEntry(name="agexample", slug="agexample", lifecycle="active")
+        self.assertEqual(desired_node_defaults(node)["lifecycle"], "active")
+
+    def test_desired_service_entry_update_fields_excludes_operator_and_analysis_fields(self) -> None:
+        from nautobot_intent_catalog.importers import desired_service_entry_update_fields
+
+        entry = DesiredServiceEntry(
+            intent_source="infrastructure",
+            catalog_metadata_name="prometheus",
+            service_type="service",
+            name="prometheus",
+            slug="prometheus",
+            display_name="Prometheus",
+            lifecycle="active",
+            notes="hello",
+        )
+        update_fields = desired_service_entry_update_fields(entry)
+
+        self.assertEqual(set(update_fields), {"lifecycle", "notes"})
+        self.assertEqual(update_fields["lifecycle"], "active")
+
+    def test_desired_service_entry_locked_fields_covers_identity_display(self) -> None:
+        from nautobot_intent_catalog.importers import desired_service_entry_locked_fields
+
+        entry = DesiredServiceEntry(
+            intent_source="infrastructure",
+            catalog_metadata_name="prometheus",
+            service_type="service",
+            name="prometheus",
+            slug="prometheus",
+            display_name="Prometheus",
+        )
+        locked_fields = desired_service_entry_locked_fields(entry)
+
+        self.assertEqual(
+            locked_fields,
+            {"name": "prometheus", "slug": "prometheus", "display_name": "Prometheus"},
+        )
+
+    def test_desired_service_entry_defaults_never_resets_requirements_field(self) -> None:
+        entry = DesiredServiceEntry(
+            intent_source="infrastructure",
+            catalog_metadata_name="prometheus",
+            service_type="service",
+            name="prometheus",
+            slug="prometheus",
+            display_name="Prometheus",
+        )
+        # `requirements` has no YAML input field (plan Section 5.3); the create-time default
+        # of `{}` is fine on create, but it must never appear in the *update*-owned set.
+        from nautobot_intent_catalog.importers import desired_service_entry_update_fields
+
+        self.assertNotIn("requirements", desired_service_entry_update_fields(entry))
+
+
+class ImportPlanEngineTests(unittest.TestCase):
+    """Plan.md Section 5.2/Step 1 item 6: create/update/unchanged/conflict classification,
+    duplicate existing rows, and preserved-field reporting for the shared planner engine."""
+
+    def test_no_existing_match_plans_create_with_all_fields(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredIPRange",
+            root="desired_ip_ranges",
+            identity={"slug": "dhcp-reserved"},
+            create_fields={"name": "dhcp-reserved", "lifecycle": "planned"},
+            update_fields={"name": "dhcp-reserved", "lifecycle": "planned"},
+            existing_matches=[],
+        )
+
+        self.assertEqual(planned.action, "create")
+        self.assertEqual(planned.changed_fields["name"], {"old": None, "new": "dhcp-reserved"})
+
+    def test_matching_existing_row_is_unchanged(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredIPRange",
+            root="desired_ip_ranges",
+            identity={"slug": "dhcp-reserved"},
+            create_fields={"name": "dhcp-reserved"},
+            update_fields={"name": "dhcp-reserved"},
+            existing_matches=[{"name": "dhcp-reserved"}],
+        )
+
+        self.assertEqual(planned.action, "unchanged")
+
+    def test_differing_update_owned_field_plans_update_with_old_new(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredIPRange",
+            root="desired_ip_ranges",
+            identity={"slug": "dhcp-reserved"},
+            create_fields={"name": "dhcp-reserved"},
+            update_fields={"name": "dhcp-reserved-renamed"},
+            existing_matches=[{"name": "dhcp-reserved"}],
+        )
+
+        self.assertEqual(planned.action, "update")
+        self.assertEqual(
+            planned.changed_fields["name"],
+            {"old": "dhcp-reserved", "new": "dhcp-reserved-renamed"},
+        )
+
+    def test_duplicate_existing_rows_is_conflict(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredNode",
+            root="desired_nodes",
+            identity={"slug": "agexample"},
+            create_fields={"name": "agexample"},
+            update_fields={"name": "agexample"},
+            existing_matches=[{"name": "agexample"}, {"name": "agexample-dup"}],
+        )
+
+        self.assertEqual(planned.action, "conflict")
+
+    def test_lifecycle_preserved_on_update_reports_it_as_preserved_not_changed(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredNode",
+            root="desired_nodes",
+            identity={"slug": "agpc"},
+            create_fields={"name": "agpc", "lifecycle": "active"},
+            update_fields={"name": "agpc"},
+            existing_matches=[{"name": "agpc", "lifecycle": "approved"}],
+        )
+
+        self.assertEqual(planned.action, "unchanged")
+        self.assertIn("lifecycle", planned.preserved_fields)
+
+    def test_locked_field_disagreement_blocks_as_conflict_not_silent_overwrite(self) -> None:
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        planned = plan_upsert(
+            model="DesiredService",
+            root="desired_services",
+            identity={"catalog_metadata_name": "prometheus"},
+            create_fields={"name": "prometheus", "lifecycle": "active"},
+            update_fields={"lifecycle": "active"},
+            existing_matches=[{"name": "prometheus-renamed", "lifecycle": "active"}],
+            locked_fields={"name": "prometheus"},
+        )
+
+        self.assertEqual(planned.action, "conflict")
+        self.assertIsNotNone(planned.conflict_reason)
+
+    def test_preview_engine_performs_no_orm_mutation(self) -> None:
+        """The planner is pure Python -- it never calls save/update/delete/bulk_create on
+        anything; this test documents that guarantee structurally (Step 1 item 10): the
+        `existing_matches` argument is a plain list of dicts, not a queryset or model
+        instance, so there is no mutation method for the engine to reach."""
+
+        from nautobot_intent_catalog.import_plan import plan_upsert
+
+        existing_matches = [{"name": "agpc"}]
+        plan_upsert(
+            model="DesiredNode",
+            root="desired_nodes",
+            identity={"slug": "agpc"},
+            create_fields={"name": "agpc"},
+            update_fields={"name": "agpc"},
+            existing_matches=existing_matches,
+        )
+        self.assertIsInstance(existing_matches[0], dict)
+        self.assertFalse(hasattr(existing_matches[0], "save"))
+
+
 if __name__ == "__main__":
     unittest.main()
