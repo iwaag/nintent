@@ -58,7 +58,7 @@ nautobot-server migrate nautobot_intent_catalog
 - Imports strict desired-state YAML into ledger models.
 - Persists analyzed services and dependencies from configured source catalogs.
 - Stores desired nodes, endpoints, IP ranges, service placements, and node operational policy.
-- Provides normal Nautobot CRUD surfaces plus Quick Host Add.
+- Provides read-only human inspection surfaces for all domain models.
 - Exposes desired state through Nautobot GraphQL for nctl reads and selected REST write surfaces.
 - Keeps transactional Jobs for source import/analysis and desired IPAM reconciliation.
 - Does not persist desired-vs-actual evaluations or compose consumer artifacts; nctl owns drift,
@@ -209,35 +209,15 @@ Unknown placement/operational fields, incomplete references, invalid policy
 combinations, list/scalar placement config, and non-boolean `is_laptop` values
 are rejected rather than coerced.
 
-## Quick Host Add
+## Read-only UI Inspection & Ownership
 
-Use `Quick Host Add` for the common case where one host needs one primary DNS
-name and one IP address. It is available from the `Intent Catalog` navigation
-near `Desired Nodes`, and directly at:
+The nintent UI provides read-only inspection for all domain objects. All model add/edit/delete forms, Quick Host Add,
+and the Source YAML diagnostic page have been removed.
 
-```text
-/plugins/intent-catalog/nodes/quick-add/
-```
-
-Quick Host Add does not create a separate host model. It writes the same
-canonical records used everywhere else:
-
-- one `DesiredNode`
-- one primary `DesiredEndpoint`
-
-If DNS or mDNS fields are left blank, Quick Host Add fills soft defaults from
-the canonical node name. For a node named `pcmain`, the primary endpoint gets:
-
-- `dns_name: pcmain.home.arpa`
-- `mdns_name: pcmain.local`
-
-Names such as `PCMAIN.local` and `pcmain.home.arpa` canonicalize to `pcmain`
-for default generation. Explicit `dns_name` and `mdns_name` form values are
-never overwritten.
-
-Use the normal `DesiredNode` and `DesiredEndpoint` CRUD screens when a host
-needs multiple endpoints, non-primary endpoint types, realized object links, or
-fine-grained endpoint edits. Use YAML import when the desired state should be
+- **Bulk structural intent:** Owned by `nauto/seed/intent_sources.yaml` and loaded via nintent's `Import Intent Sources` Job.
+- **Node lifecycle & linking:** Owned by `nctl lifecycle` and `nctl` node linking reconciler.
+- **Braindump & Alignment Review writes:** Owned by `nctl` over the narrow REST API (`/api/plugins/intent-catalog/braindumps/` and `/api/plugins/intent-catalog/alignment-reviews/`).
+- **IP Address linking:** Owned by nintent's `Reconcile Desired IPAM Intent` Job.
 managed from a source file or reviewed as a batch.
 
 ## Deployment profiles and service placements

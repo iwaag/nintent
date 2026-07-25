@@ -17,18 +17,18 @@ Operator-facing ledger steps only. Desired-vs-actual drift and consumer renderin
 | Page | Path |
 |---|---|
 | Sources | `/plugins/intent-catalog/sources/` |
-| YAML source diagnostic view | `/plugins/intent-catalog/sources/source-yaml/` |
-| Quick Host Add | `/plugins/intent-catalog/nodes/quick-add/` |
+| Desired Nodes | `/plugins/intent-catalog/nodes/` |
+| Desired Services | `/plugins/intent-catalog/services/` |
 | Desired service placements | `/plugins/intent-catalog/placements/` |
+| Braindumps | `/plugins/intent-catalog/braindumps/` |
 
 ## Desired-state operations
 
-Quick Host Add creates one `DesiredNode` and one primary `DesiredEndpoint`. Leave DNS/mDNS
-blank for canonical defaults such as `pcmain.home.arpa` and `pcmain.local`.
+The nintent UI is a read-only human inspection adapter. All add/edit/delete forms, Quick Host Add,
+and the Source YAML diagnostic page have been removed.
 
-Use normal CRUD screens or strict YAML import for services, placements, multiple endpoints,
-operational configs, and IP ranges. `vars/deployment_profiles.yml` remains Ansible-owned and is
-read directly by `nctl render production`; nintent has no profile projection or sync Job.
+Bulk structural intent is written via strict YAML import (`Import Intent Sources`). Lifecycle transitions and
+node linking are owned by `nctl`. Braindump and Alignment Review writes are owned by `nctl` over the narrow REST API.
 
 ## Jobs retained in nintent
 
