@@ -171,6 +171,7 @@
                                 <th>Desired Node</th>
                                 <th>Type</th>
                                 <th>IP Address</th>
+                                <th>MAC Address</th>
                                 <th>IP Policy</th>
                                 <th>DNS Name</th>
                                 <th>Protocol</th>
@@ -185,6 +186,7 @@
                                     <td><code>{{ desired_endpoint.desired_node }}</code></td>
                                     <td>{{ desired_endpoint.endpoint_type }}</td>
                                     <td>{{ desired_endpoint.ip_address|default:"-" }}</td>
+                                    <td><code>{{ desired_endpoint.mac_address|default:"-" }}</code></td>
                                     <td>{{ desired_endpoint.ip_policy }}</td>
                                     <td>{{ desired_endpoint.dns_name|default:"-" }}</td>
                                     <td>{{ desired_endpoint.protocol|default:"-" }}</td>
@@ -199,6 +201,86 @@
                 <div class="panel panel-default">
                     <div class="panel-body">
                         No desired endpoints are registered.
+                    </div>
+                </div>
+            {% endif %}
+
+            <h2>Desired Compute Platforms</h2>
+            {% if desired_compute_platforms %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-headings">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Slug</th>
+                                <th>Provider</th>
+                                <th>Lifecycle</th>
+                                <th>Control Node</th>
+                                <th>Schema</th>
+                                <th>Config</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for platform in desired_compute_platforms %}
+                                <tr>
+                                    <td>{{ platform.name }}</td>
+                                    <td><code>{{ platform.slug }}</code></td>
+                                    <td>{{ platform.provider_type }}</td>
+                                    <td>{{ platform.lifecycle }}</td>
+                                    <td><code>{{ platform.control_node }}</code></td>
+                                    <td>{{ platform.config_schema_version }}</td>
+                                    <td><code>{{ platform.config }}</code></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="panel panel-default">
+                    <div class="panel-body">
+                        No desired compute platforms are registered.
+                    </div>
+                </div>
+            {% endif %}
+
+            <h2>Desired Compute Instances</h2>
+            {% if desired_compute_instances %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-headings">
+                        <thead>
+                            <tr>
+                                <th>Desired Node</th>
+                                <th>Platform</th>
+                                <th>Kind</th>
+                                <th>Power</th>
+                                <th>vCPU</th>
+                                <th>Memory (MiB)</th>
+                                <th>Root Disk (GiB)</th>
+                                <th>Schema</th>
+                                <th>Config</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for instance in desired_compute_instances %}
+                                <tr>
+                                    <td><code>{{ instance.desired_node }}</code></td>
+                                    <td><code>{{ instance.platform }}</code></td>
+                                    <td>{{ instance.instance_kind }}</td>
+                                    <td>{{ instance.desired_power_state }}</td>
+                                    <td>{{ instance.vcpus }}</td>
+                                    <td>{{ instance.memory_mb }}</td>
+                                    <td>{{ instance.root_disk_gb }}</td>
+                                    <td>{{ instance.config_schema_version }}</td>
+                                    <td><code>{{ instance.config }}</code></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="panel panel-default">
+                    <div class="panel-body">
+                        No desired compute instances are registered.
                     </div>
                 </div>
             {% endif %}

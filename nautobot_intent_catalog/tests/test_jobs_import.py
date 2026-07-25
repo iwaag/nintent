@@ -146,5 +146,84 @@ class StrictImportHelperTests(unittest.TestCase):
         )
 
 
+class ValidatedUpsertDiffTests(unittest.TestCase):
+    def test_create_reports_every_field_with_old_none(self) -> None:
+        model = _fake_model([])
+
+        status, obj, changed = jobs._validated_upsert_diff(
+            model,
+            {"slug": "aghub-pve"},
+            {"name": "aghub Proxmox", "lifecycle": "active"},
+        )
+
+        self.assertEqual(status, "created")
+        self.assertEqual(obj.name, "aghub Proxmox")
+        self.assertEqual(
+            changed,
+            {
+                "name": {"old": None, "new": "aghub Proxmox"},
+                "lifecycle": {"old": None, "new": "active"},
+            },
+        )
+
+    def test_update_reports_only_the_changed_fields(self) -> None:
+        existing = _FakeObject(pk="existing-id", name="old name", lifecycle="active")
+        model = _fake_model([existing])
+
+        status, obj, changed = jobs._validated_upsert_diff(
+            model,
+            {"slug": "aghub-pve"},
+            {"name": "new name", "lifecycle": "active"},
+        )
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(changed, {"name": {"old": "old name", "new": "new name"}})
+        self.assertIs(obj, existing)
+
+    def test_unchanged_reports_an_empty_diff(self) -> None:
+        existing = _FakeObject(pk="existing-id", name="same", lifecycle="active")
+        model = _fake_model([existing])
+
+        status, obj, changed = jobs._validated_upsert_diff(
+            model,
+            {"slug": "aghub-pve"},
+            {"name": "same", "lifecycle": "active"},
+        )
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(changed, {})
+        self.assertFalse(existing.cleaned)
+        self.assertFalse(existing.saved)
+
+
+class ResolveDesiredComputePlatformTests(unittest.TestCase):
+    def test_resolution_is_scoped_by_slug(self) -> None:
+        platform = SimpleNamespace(pk="platform-id")
+        model = _fake_model([platform])
+        original = getattr(jobs, "DesiredComputePlatform", None)
+        jobs.DesiredComputePlatform = model
+        try:
+            result = jobs._resolve_desired_compute_platform("aghub-pve")
+        finally:
+            if original is None:
+                del jobs.DesiredComputePlatform
+            else:
+                jobs.DesiredComputePlatform = original
+
+        self.assertIs(result, platform)
+        self.assertEqual(model.objects.last_filter, {"slug": "aghub-pve"})
+
+
+class JsonSafeTests(unittest.TestCase):
+    def test_json_safe_converts_non_primitive_values_to_strings(self) -> None:
+        class _Id:
+            def __str__(self) -> str:
+                return "abc-123"
+
+        result = jobs._json_safe({"a": [1, _Id(), None, True], "b": {"c": _Id()}})
+
+        self.assertEqual(result, {"a": [1, "abc-123", None, True], "b": {"c": "abc-123"}})
+
+
 if __name__ == "__main__":
     unittest.main()

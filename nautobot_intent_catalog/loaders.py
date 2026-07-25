@@ -11,6 +11,17 @@ from typing import Any
 
 import yaml
 
+from .compute_contract import (
+    ComputeContractError,
+    normalize_mac_address,
+    validate_config_schema_version,
+    validate_instance_config,
+    validate_memory_mb,
+    validate_platform_config,
+    validate_provider_type,
+    validate_root_disk_gb,
+    validate_vcpus,
+)
 from .intent_contract import (
     ContractError,
     canonical_json,
@@ -77,6 +88,7 @@ class DesiredEndpointEntry:
     desired_node: str
     endpoint_type: str = "primary"
     ip_address: str | None = None
+    mac_address: str | None = None
     dns_name: str | None = None
     mdns_name: str | None = None
     vpn_dns_name: str | None = None
@@ -101,6 +113,34 @@ class DesiredIPRangeEntry:
     generate_dnsmasq: bool = False
     dnsmasq_options: dict[str, Any] = field(default_factory=dict)
     description: str | None = None
+
+
+@dataclass(frozen=True)
+class DesiredComputePlatformEntry:
+    """One desired compute platform row normalized from YAML."""
+
+    name: str
+    slug: str
+    control_node: str
+    provider_type: str = "proxmox"
+    lifecycle: str = "active"
+    config_schema_version: str = "v1"
+    config: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DesiredComputeInstanceEntry:
+    """One desired compute instance row normalized from YAML."""
+
+    desired_node: str
+    platform: str
+    instance_kind: str
+    vcpus: int
+    memory_mb: int
+    root_disk_gb: int
+    desired_power_state: str = "running"
+    config_schema_version: str = "v1"
+    config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -169,6 +209,8 @@ class IntentSourceLoadResult:
     desired_nodes: list[DesiredNodeEntry] = field(default_factory=list)
     desired_ip_ranges: list[DesiredIPRangeEntry] = field(default_factory=list)
     desired_endpoints: list[DesiredEndpointEntry] = field(default_factory=list)
+    desired_compute_platforms: list[DesiredComputePlatformEntry] = field(default_factory=list)
+    desired_compute_instances: list[DesiredComputeInstanceEntry] = field(default_factory=list)
     desired_services: list[DesiredServiceEntry] = field(default_factory=list)
     desired_service_placements: list[DesiredServicePlacementEntry] = field(default_factory=list)
     desired_node_operational_overrides: list[DesiredNodeOperationalOverrideEntry] = field(default_factory=list)
@@ -243,6 +285,8 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
     desired_nodes: list[DesiredNodeEntry] = []
     desired_ip_ranges: list[DesiredIPRangeEntry] = []
     desired_endpoints: list[DesiredEndpointEntry] = []
+    desired_compute_platforms: list[DesiredComputePlatformEntry] = []
+    desired_compute_instances: list[DesiredComputeInstanceEntry] = []
     desired_services: list[DesiredServiceEntry] = []
     desired_service_placements: list[DesiredServicePlacementEntry] = []
     desired_node_operational_overrides: list[DesiredNodeOperationalOverrideEntry] = []
@@ -280,6 +324,22 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
             desired_endpoints.append(entry)
         errors.extend(entry_errors)
 
+    raw_compute_platforms, compute_platform_errors = _list_section(data, "desired_compute_platforms")
+    errors.extend(compute_platform_errors)
+    for index, item in enumerate(raw_compute_platforms, start=1):
+        entry, entry_errors = _normalize_desired_compute_platform_entry(item, index)
+        if entry is not None:
+            desired_compute_platforms.append(entry)
+        errors.extend(entry_errors)
+
+    raw_compute_instances, compute_instance_errors = _list_section(data, "desired_compute_instances")
+    errors.extend(compute_instance_errors)
+    for index, item in enumerate(raw_compute_instances, start=1):
+        entry, entry_errors = _normalize_desired_compute_instance_entry(item, index)
+        if entry is not None:
+            desired_compute_instances.append(entry)
+        errors.extend(entry_errors)
+
     raw_services, service_errors = _list_section(data, "desired_services")
     errors.extend(service_errors)
     for index, item in enumerate(raw_services, start=1):
@@ -307,6 +367,9 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
             desired_node_operational_overrides.append(entry)
         errors.extend(entry_errors)
 
+    errors.extend(_duplicate_endpoint_mac_errors(desired_endpoints))
+    errors.extend(_duplicate_compute_platform_errors(desired_compute_platforms))
+    errors.extend(_duplicate_compute_instance_errors(desired_compute_instances))
     errors.extend(_duplicate_service_errors(desired_services))
     errors.extend(_duplicate_placement_errors(desired_service_placements))
     errors.extend(_duplicate_operational_override_errors(desired_node_operational_overrides))
@@ -317,6 +380,8 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
         desired_nodes=desired_nodes,
         desired_ip_ranges=desired_ip_ranges,
         desired_endpoints=desired_endpoints,
+        desired_compute_platforms=desired_compute_platforms,
+        desired_compute_instances=desired_compute_instances,
         desired_services=desired_services,
         desired_service_placements=desired_service_placements,
         desired_node_operational_overrides=desired_node_operational_overrides,
@@ -487,6 +552,13 @@ def _normalize_desired_endpoint_entry(item: Any, index: int) -> tuple[DesiredEnd
         errors.append(ip_policy_error)
     if ip_policy is None and not ip_address:
         ip_policy = "external"
+    mac_address = None
+    raw_mac_address = item.get("mac_address")
+    if raw_mac_address is not None:
+        try:
+            mac_address = normalize_mac_address(raw_mac_address)
+        except ComputeContractError as exc:
+            errors.append(f"desired_endpoints entry {index} mac_address {exc}")
     if errors:
         return None, errors
 
@@ -496,6 +568,7 @@ def _normalize_desired_endpoint_entry(item: Any, index: int) -> tuple[DesiredEnd
             desired_node=desired_node or "",
             endpoint_type=_choice(item.get("endpoint_type"), _ENDPOINT_TYPES, "primary"),
             ip_address=ip_address,
+            mac_address=mac_address,
             dns_name=_optional_str(item.get("dns_name")),
             mdns_name=_optional_str(item.get("mdns_name")),
             vpn_dns_name=_optional_str(item.get("vpn_dns_name")),
@@ -610,6 +683,160 @@ def _normalize_desired_service_entry(item: Any, index: int) -> tuple[DesiredServ
             prefers_gpu=prefers_gpu,
             min_memory_gb=min_memory_gb,
             notes=notes,
+        ),
+        [],
+    )
+
+
+def _normalize_desired_compute_platform_entry(
+    item: Any,
+    index: int,
+) -> tuple[DesiredComputePlatformEntry | None, list[str]]:
+    """Normalize one desired compute platform YAML item.
+
+    Config/provider/schema-version validation reuses the exact Django-free `compute_contract`
+    helpers the model/REST/UI layers call, so a load error and a model `ValidationError` never
+    diverge on the same input (plan Section 5.8).
+    """
+
+    section = f"desired_compute_platforms entry {index}"
+    allowed = {
+        "name",
+        "slug",
+        "provider_type",
+        "lifecycle",
+        "control_node",
+        "config_schema_version",
+        "config",
+    }
+    required = {"name", "slug", "control_node"}
+    errors = _strict_mapping_errors(item, section, allowed, required)
+    if errors:
+        return None, errors
+
+    name = _strict_nonempty_string(item.get("name"), f"{section} name", errors)
+    slug = _strict_slug(item.get("slug"), f"{section} slug", errors)
+    control_node = _strict_slug(item.get("control_node"), f"{section} control_node", errors)
+    lifecycle = _strict_choice(item.get("lifecycle", "active"), _LIFECYCLES, f"{section} lifecycle", errors)
+
+    try:
+        provider_type = validate_provider_type(item.get("provider_type", "proxmox"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+        provider_type = "proxmox"
+
+    try:
+        config_schema_version = validate_config_schema_version(item.get("config_schema_version"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+        config_schema_version = "v1"
+
+    try:
+        config = validate_platform_config(item.get("config") or {})
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+        config = {}
+
+    if errors:
+        return None, errors
+
+    return (
+        DesiredComputePlatformEntry(
+            name=name,
+            slug=slug,
+            control_node=control_node,
+            provider_type=provider_type,
+            lifecycle=lifecycle,
+            config_schema_version=config_schema_version,
+            config=config,
+        ),
+        [],
+    )
+
+
+def _normalize_desired_compute_instance_entry(
+    item: Any,
+    index: int,
+) -> tuple[DesiredComputeInstanceEntry | None, list[str]]:
+    """Normalize one desired compute instance YAML item.
+
+    Bounds/config validation reuses the exact `compute_contract` helpers the model/REST/UI
+    layers call (plan Section 5.8); `instance_kind` must resolve before `config` can be
+    validated because the allowed config keys are kind-gated.
+    """
+
+    section = f"desired_compute_instances entry {index}"
+    allowed = {
+        "desired_node",
+        "platform",
+        "instance_kind",
+        "desired_power_state",
+        "vcpus",
+        "memory_mb",
+        "root_disk_gb",
+        "config_schema_version",
+        "config",
+    }
+    required = {"desired_node", "platform", "instance_kind", "vcpus", "memory_mb", "root_disk_gb"}
+    errors = _strict_mapping_errors(item, section, allowed, required)
+    if errors:
+        return None, errors
+
+    desired_node = _strict_slug(item.get("desired_node"), f"{section} desired_node", errors)
+    platform = _strict_slug(item.get("platform"), f"{section} platform", errors)
+    instance_kind = _strict_choice(item.get("instance_kind"), _INSTANCE_KINDS, f"{section} instance_kind", errors)
+    desired_power_state = _strict_choice(
+        item.get("desired_power_state", "running"),
+        _POWER_STATES,
+        f"{section} desired_power_state",
+        errors,
+    )
+
+    vcpus = 0
+    try:
+        vcpus = validate_vcpus(item.get("vcpus"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+
+    memory_mb = 0
+    try:
+        memory_mb = validate_memory_mb(item.get("memory_mb"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+
+    root_disk_gb = 0
+    try:
+        root_disk_gb = validate_root_disk_gb(item.get("root_disk_gb"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+
+    try:
+        config_schema_version = validate_config_schema_version(item.get("config_schema_version"))
+    except ComputeContractError as exc:
+        errors.append(f"{section} {exc}")
+        config_schema_version = "v1"
+
+    config: dict[str, Any] = {}
+    if instance_kind in _INSTANCE_KINDS:
+        try:
+            config = validate_instance_config(item.get("config") or {}, instance_kind=instance_kind)
+        except ComputeContractError as exc:
+            errors.append(f"{section} {exc}")
+
+    if errors:
+        return None, errors
+
+    return (
+        DesiredComputeInstanceEntry(
+            desired_node=desired_node,
+            platform=platform,
+            instance_kind=instance_kind,
+            desired_power_state=desired_power_state,
+            vcpus=vcpus,
+            memory_mb=memory_mb,
+            root_disk_gb=root_disk_gb,
+            config_schema_version=config_schema_version,
+            config=config,
         ),
         [],
     )
@@ -1085,6 +1312,40 @@ def _duplicate_placement_errors(entries: list[DesiredServicePlacementEntry]) -> 
     return errors
 
 
+def _duplicate_endpoint_mac_errors(entries: list[DesiredEndpointEntry]) -> list[str]:
+    seen: dict[str, None] = {}
+    errors = []
+    for entry in entries:
+        if not entry.mac_address:
+            continue
+        if entry.mac_address in seen:
+            errors.append(f"desired_endpoints contains duplicate mac_address: {entry.mac_address}.")
+        seen[entry.mac_address] = None
+    return errors
+
+
+def _duplicate_compute_platform_errors(entries: list[DesiredComputePlatformEntry]) -> list[str]:
+    seen: set[str] = set()
+    errors = []
+    for entry in entries:
+        if entry.slug in seen:
+            errors.append(f"desired_compute_platforms contains duplicate slug: {entry.slug}.")
+        seen.add(entry.slug)
+    return errors
+
+
+def _duplicate_compute_instance_errors(entries: list[DesiredComputeInstanceEntry]) -> list[str]:
+    seen: set[str] = set()
+    errors = []
+    for entry in entries:
+        if entry.desired_node in seen:
+            errors.append(
+                f"desired_compute_instances contains duplicate desired_node: {entry.desired_node}."
+            )
+        seen.add(entry.desired_node)
+    return errors
+
+
 def _duplicate_operational_override_errors(entries: list[DesiredNodeOperationalOverrideEntry]) -> list[str]:
     seen = set()
     errors = []
@@ -1149,6 +1410,8 @@ _ACTUAL_TYPE_DEFAULTS = {
 }
 _LIFECYCLES = {"planned", "approved", "active", "deprecated", "retired"}
 _LIFECYCLES_SERVICE = _LIFECYCLES | {"proposed"}
+_INSTANCE_KINDS = {"container", "virtual_machine"}
+_POWER_STATES = {"running", "stopped"}
 _SERVICE_TYPES = {"service", "website", "worker", "database", "queue", "storage", "agent", "other"}
 _ENDPOINT_TYPES = {"primary", "management", "service", "vpn", "mdns", "other"}
 _DNSMASQ_RECORD_TYPES = {"host_record", "address", "cname"}

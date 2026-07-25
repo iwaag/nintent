@@ -583,5 +583,357 @@ class LoaderTests(unittest.TestCase):
         )
 
 
+_SEED_YAML = (
+    "desired_nodes:\n"
+    "  - name: aghub\n"
+    "    slug: aghub\n"
+    "    node_type: device\n"
+    "  - name: agdnsmasq\n"
+    "    slug: agdnsmasq\n"
+    "    node_type: service_host\n"
+    "\n"
+    "desired_endpoints:\n"
+    "  - name: primary\n"
+    "    desired_node: agdnsmasq\n"
+    "    endpoint_type: primary\n"
+    "    ip_address: 192.168.0.2\n"
+    "    ip_policy: dhcp_reserved\n"
+    "    mac_address: BC:24:11:23:DC:B7\n"
+    "    dns_name: agdnsmasq.home.arpa\n"
+    "    mdns_name: agdnsmasq.local\n"
+    "    generate_dnsmasq: true\n"
+    "\n"
+    "desired_compute_platforms:\n"
+    "  - name: aghub Proxmox\n"
+    "    slug: aghub-pve\n"
+    "    provider_type: proxmox\n"
+    "    lifecycle: active\n"
+    "    control_node: aghub\n"
+    "    config:\n"
+    "      cluster_name: aghub-proxmox\n"
+    "      default_storage: local-lvm\n"
+    "      default_bridge: vmbr0\n"
+    "\n"
+    "desired_compute_instances:\n"
+    "  - desired_node: agdnsmasq\n"
+    "    platform: aghub-pve\n"
+    "    instance_kind: container\n"
+    "    desired_power_state: running\n"
+    "    vcpus: 1\n"
+    "    memory_mb: 512\n"
+    "    root_disk_gb: 8\n"
+    "    config:\n"
+    "      vmid: 108\n"
+    "      template: local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst\n"
+    "      unprivileged: true\n"
+)
+
+
+class ComputePlatformLoaderTests(unittest.TestCase):
+    def test_seed_shaped_yaml_loads_with_defaults_and_normalization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(_SEED_YAML, encoding="utf-8")
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(len(result.desired_compute_platforms), 1)
+        platform = result.desired_compute_platforms[0]
+        self.assertEqual(platform.slug, "aghub-pve")
+        self.assertEqual(platform.provider_type, "proxmox")
+        self.assertEqual(platform.lifecycle, "active")
+        self.assertEqual(platform.config_schema_version, "v1")
+        self.assertEqual(
+            platform.config,
+            {
+                "cluster_name": "aghub-proxmox",
+                "default_storage": "local-lvm",
+                "default_bridge": "vmbr0",
+            },
+        )
+
+        self.assertEqual(len(result.desired_compute_instances), 1)
+        instance = result.desired_compute_instances[0]
+        self.assertEqual(instance.desired_node, "agdnsmasq")
+        self.assertEqual(instance.platform, "aghub-pve")
+        self.assertEqual(instance.vcpus, 1)
+        self.assertEqual(instance.memory_mb, 512)
+        self.assertEqual(instance.root_disk_gb, 8)
+        self.assertEqual(
+            instance.config,
+            {
+                "vmid": 108,
+                "template": "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst",
+                "unprivileged": True,
+            },
+        )
+
+        self.assertEqual(len(result.desired_endpoints), 1)
+        # Mixed-case colon input normalizes to canonical lower-case (compute_contract.normalize_mac_address).
+        self.assertEqual(result.desired_endpoints[0].mac_address, "bc:24:11:23:dc:b7")
+
+    def test_platform_omitted_lifecycle_and_provider_type_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_platforms:\n"
+                "  - name: aghub Proxmox\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        platform = result.desired_compute_platforms[0]
+        self.assertEqual(platform.provider_type, "proxmox")
+        self.assertEqual(platform.lifecycle, "active")
+        self.assertEqual(platform.config, {})
+
+    def test_platform_rejects_unknown_config_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_platforms:\n"
+                "  - name: aghub Proxmox\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n"
+                "    config:\n"
+                "      bogus: nope\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("unknown_config_key" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_platform_rejects_unknown_top_level_field(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_platforms:\n"
+                "  - name: aghub Proxmox\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n"
+                "    bogus: nope\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "desired_compute_platforms entry 1 has unknown fields: bogus.",
+            result.errors,
+        )
+
+    def test_platform_rejects_wrong_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_platforms:\n"
+                "  - name: aghub Proxmox\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n"
+                "    config_schema_version: v2\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("invalid_config_schema_version" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_duplicate_platform_slug_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_platforms:\n"
+                "  - name: aghub Proxmox\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n"
+                "  - name: aghub Proxmox Again\n"
+                "    slug: aghub-pve\n"
+                "    control_node: aghub\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "desired_compute_platforms contains duplicate slug: aghub-pve.",
+            result.errors,
+        )
+
+
+class ComputeInstanceLoaderTests(unittest.TestCase):
+    def test_virtual_machine_forbids_unprivileged_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_instances:\n"
+                "  - desired_node: some-vm\n"
+                "    platform: aghub-pve\n"
+                "    instance_kind: virtual_machine\n"
+                "    vcpus: 2\n"
+                "    memory_mb: 2048\n"
+                "    root_disk_gb: 32\n"
+                "    config:\n"
+                "      template: local:vztmpl/debian-13.tar.zst\n"
+                "      unprivileged: true\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("invalid_config_key" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_container_requires_unprivileged_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_instances:\n"
+                "  - desired_node: some-ct\n"
+                "    platform: aghub-pve\n"
+                "    instance_kind: container\n"
+                "    vcpus: 1\n"
+                "    memory_mb: 512\n"
+                "    root_disk_gb: 8\n"
+                "    config:\n"
+                "      template: local:vztmpl/debian-13.tar.zst\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("missing_config_value" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_vcpus_out_of_range_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_instances:\n"
+                "  - desired_node: some-ct\n"
+                "    platform: aghub-pve\n"
+                "    instance_kind: container\n"
+                "    vcpus: 0\n"
+                "    memory_mb: 512\n"
+                "    root_disk_gb: 8\n"
+                "    config:\n"
+                "      template: local:vztmpl/debian-13.tar.zst\n"
+                "      unprivileged: true\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("vcpus_out_of_range" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_duplicate_desired_node_across_instances_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_compute_instances:\n"
+                "  - desired_node: agdnsmasq\n"
+                "    platform: aghub-pve\n"
+                "    instance_kind: container\n"
+                "    vcpus: 1\n"
+                "    memory_mb: 512\n"
+                "    root_disk_gb: 8\n"
+                "    config:\n"
+                "      template: local:vztmpl/debian-13.tar.zst\n"
+                "      unprivileged: true\n"
+                "  - desired_node: agdnsmasq\n"
+                "    platform: aghub-pve\n"
+                "    instance_kind: container\n"
+                "    vcpus: 1\n"
+                "    memory_mb: 512\n"
+                "    root_disk_gb: 8\n"
+                "    config:\n"
+                "      template: local:vztmpl/debian-13.tar.zst\n"
+                "      unprivileged: true\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "desired_compute_instances contains duplicate desired_node: agdnsmasq.",
+            result.errors,
+        )
+
+
+class EndpointMacAddressLoaderTests(unittest.TestCase):
+    def test_hyphenated_mac_normalizes_to_canonical_colon_form(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agdnsmasq\n"
+                "    mac_address: BC-24-11-23-DC-B7\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.desired_endpoints[0].mac_address, "bc:24:11:23:dc:b7")
+
+    def test_invalid_mac_address_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agdnsmasq\n"
+                "    mac_address: not-a-mac\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertTrue(
+            any("invalid_mac_address" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_duplicate_mac_address_across_endpoints_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: node-a\n"
+                "    mac_address: bc:24:11:23:dc:b7\n"
+                "  - name: primary\n"
+                "    desired_node: node-b\n"
+                "    mac_address: bc:24:11:23:dc:b7\n",
+                encoding="utf-8",
+            )
+
+            result = load_intent_sources(path)
+
+        self.assertIn(
+            "desired_endpoints contains duplicate mac_address: bc:24:11:23:dc:b7.",
+            result.errors,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

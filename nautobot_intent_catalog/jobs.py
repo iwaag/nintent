@@ -8,6 +8,10 @@ from pathlib import Path
 
 from .analysis import analyze_intent_sources
 from .importers import (
+    desired_compute_instance_defaults,
+    desired_compute_instance_identity,
+    desired_compute_platform_defaults,
+    desired_compute_platform_identity,
     desired_node_operational_override_defaults,
     desired_node_operational_override_identity,
     desired_service_create_defaults,
@@ -38,6 +42,8 @@ try:
     from nautobot.apps.jobs import BooleanVar, IntegerVar, Job, StringVar, register_jobs
 
     from .models import (
+        DesiredComputeInstance,
+        DesiredComputePlatform,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -123,13 +129,21 @@ else:
             default=False,
             description="Disable existing DB intent sources that are not present in the YAML input.",
         )
+        preview = BooleanVar(
+            default=False,
+            description=(
+                "Compute the exact per-object create/update/unchanged diff and always roll back. "
+                "Makes zero committed writes regardless of disable_missing or a future commit "
+                "default, independent of any UI checkbox state."
+            ),
+        )
 
         class Meta:
             name = "Import Intent Sources"
             description = "Import intent source YAML rows into IntentSource records."
             has_sensitive_variables = False
 
-        def run(self, source_file: str, disable_missing: bool) -> None:
+        def run(self, source_file: str, disable_missing: bool, preview: bool = False) -> None:
             if source_file:
                 load_result = load_intent_sources(Path(source_file))
             else:
@@ -141,25 +155,41 @@ else:
                 raise ValueError("Intent source catalog could not be loaded; see Job logs for details.")
 
             with transaction.atomic():
-                counts = _import_intent_rows(load_result, disable_missing=disable_missing)
+                counts, diffs = _import_intent_rows(load_result, disable_missing=disable_missing)
+                if preview:
+                    # Force a rollback of every write this pass made -- including compute
+                    # platform/instance rows a later row in the same YAML needed to resolve by
+                    # slug -- while `counts`/`diffs` remain plain Python data already extracted
+                    # from the (about to be discarded) DB state. This guarantees zero committed
+                    # writes independent of `disable_missing` or any UI checkbox default
+                    # (plan Section 5.8).
+                    transaction.set_rollback(True)
 
-            self.logger.info(
-                "Intent source import summary: %s",
-                _json(
-                    {
-                        "source_path": str(load_result.source_path),
-                        "intent_sources": len(load_result.intent_sources),
-                        "desired_nodes": len(load_result.desired_nodes),
-                        "desired_ip_ranges": len(load_result.desired_ip_ranges),
-                        "desired_endpoints": len(load_result.desired_endpoints),
-                        "desired_services": len(load_result.desired_services),
-                        "desired_service_placements": len(load_result.desired_service_placements),
-                        "desired_node_operational_overrides": len(
-                            load_result.desired_node_operational_overrides
-                        ),
-                        **counts,
-                    }
+            summary = {
+                "source_path": str(load_result.source_path),
+                "preview": bool(preview),
+                "intent_sources": len(load_result.intent_sources),
+                "desired_nodes": len(load_result.desired_nodes),
+                "desired_ip_ranges": len(load_result.desired_ip_ranges),
+                "desired_endpoints": len(load_result.desired_endpoints),
+                "desired_compute_platforms": len(load_result.desired_compute_platforms),
+                "desired_compute_instances": len(load_result.desired_compute_instances),
+                "desired_services": len(load_result.desired_services),
+                "desired_service_placements": len(load_result.desired_service_placements),
+                "desired_node_operational_overrides": len(
+                    load_result.desired_node_operational_overrides
                 ),
+                **counts,
+            }
+            self.logger.info(
+                "Intent source import %s summary: %s",
+                "preview" if preview else "apply",
+                _json(summary),
+            )
+            self.create_file(
+                "intent-import-preview.json" if preview else "intent-import-apply.json",
+                json.dumps({"summary": summary, "diffs": diffs}, sort_keys=True, indent=2, ensure_ascii=True)
+                + "\n",
             )
 
 
@@ -592,8 +622,14 @@ def _entry_from_intent_source(intent_source) -> IntentSourceEntry:
     )
 
 
-def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
-    """Apply one strict YAML document atomically and return idempotency counts."""
+def _import_intent_rows(load_result, *, disable_missing: bool) -> tuple[dict, list[dict]]:
+    """Apply one strict YAML document atomically.
+
+    Returns `(counts, diffs)`. `diffs` names the exact root, identity, and changed
+    field old/new values for every row on every call -- not only in preview mode --
+    so preview and apply always compute the diff through the identical code path
+    (plan Section 5.8 preview/apply parity).
+    """
 
     counts = {
         "created": 0,
@@ -609,6 +645,12 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
         "endpoints_created": 0,
         "endpoints_updated": 0,
         "endpoints_unchanged": 0,
+        "compute_platforms_created": 0,
+        "compute_platforms_updated": 0,
+        "compute_platforms_unchanged": 0,
+        "compute_instances_created": 0,
+        "compute_instances_updated": 0,
+        "compute_instances_unchanged": 0,
         "services_created": 0,
         "services_updated": 0,
         "services_unchanged": 0,
@@ -619,6 +661,18 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
         "operational_overrides_updated": 0,
         "operational_overrides_unchanged": 0,
     }
+    diffs: list[dict] = []
+
+    def _record(root: str, identity: dict, status: str, changed: dict) -> None:
+        diffs.append(
+            {
+                "root": root,
+                "identity": _json_safe(identity),
+                "status": status,
+                "changed": changed,
+            }
+        )
+
     seen_urls = set()
     seen_slugs = set()
     for source in load_result.intent_sources:
@@ -629,8 +683,9 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             seen_urls.add(source.url)
         else:
             identity = {"slug": defaults["slug"]}
-        status, _obj = _validated_upsert(IntentSource, identity, defaults)
+        status, _obj, changed = _validated_upsert_diff(IntentSource, identity, defaults)
         counts[status] += 1
+        _record("intent_sources", identity, status, changed)
 
     if disable_missing:
         missing = (
@@ -638,34 +693,76 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             .exclude(url__in=seen_urls)
             .exclude(slug__in=seen_slugs)
         )
+        disabled_slugs = list(missing.values_list("slug", flat=True))
         counts["disabled"] = missing.update(enabled=False)
+        for slug in disabled_slugs:
+            _record(
+                "intent_sources",
+                {"slug": slug},
+                "disabled",
+                {"enabled": {"old": True, "new": False}},
+            )
 
     source_by_key = _intent_source_lookup()
     for node in load_result.desired_nodes:
         intent_source = source_by_key.get(node.intent_source) if node.intent_source else None
-        status, _obj = _validated_upsert(
+        identity = desired_node_identity(node)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredNode,
-            desired_node_identity(node),
+            identity,
             desired_node_defaults(node, intent_source_id=getattr(intent_source, "pk", None)),
         )
         counts[f"nodes_{status}"] += 1
+        _record("desired_nodes", identity, status, changed)
 
     for ip_range in load_result.desired_ip_ranges:
-        status, _obj = _validated_upsert(
+        identity = desired_ip_range_identity(ip_range)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredIPRange,
-            desired_ip_range_identity(ip_range),
+            identity,
             desired_ip_range_defaults(ip_range),
         )
         counts[f"ip_ranges_{status}"] += 1
+        _record("desired_ip_ranges", identity, status, changed)
 
     for endpoint in load_result.desired_endpoints:
         desired_node = _resolve_desired_node(endpoint.desired_node)
-        status, _obj = _validated_upsert(
+        identity = desired_endpoint_identity(endpoint, desired_node_id=desired_node.pk)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredEndpoint,
-            desired_endpoint_identity(endpoint, desired_node_id=desired_node.pk),
+            identity,
             desired_endpoint_defaults(endpoint, desired_node=desired_node),
         )
         counts[f"endpoints_{status}"] += 1
+        _record("desired_endpoints", identity, status, changed)
+
+    for platform in load_result.desired_compute_platforms:
+        control_node = _resolve_desired_node(platform.control_node)
+        identity = desired_compute_platform_identity(platform)
+        status, _obj, changed = _validated_upsert_diff(
+            DesiredComputePlatform,
+            identity,
+            desired_compute_platform_defaults(platform, control_node_id=control_node.pk),
+        )
+        counts[f"compute_platforms_{status}"] += 1
+        _record("desired_compute_platforms", identity, status, changed)
+
+    for instance in load_result.desired_compute_instances:
+        desired_node = _resolve_desired_node(instance.desired_node)
+        platform_obj = _resolve_desired_compute_platform(instance.platform)
+        identity = desired_compute_instance_identity(desired_node.pk)
+        status, _obj, changed = _validated_upsert_diff(
+            DesiredComputeInstance,
+            identity,
+            desired_compute_instance_defaults(instance, platform_id=platform_obj.pk),
+        )
+        counts[f"compute_instances_{status}"] += 1
+        _record(
+            "desired_compute_instances",
+            {"desired_node": instance.desired_node, **identity},
+            status,
+            changed,
+        )
 
     for service in load_result.desired_services:
         intent_source = source_by_key.get(service.intent_source)
@@ -673,12 +770,14 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             raise ValueError(
                 f"desired_services entry references unknown intent_source slug: {service.intent_source}."
             )
-        status, _obj = _validated_upsert(
+        identity = desired_service_entry_identity(service, intent_source.pk)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredService,
-            desired_service_entry_identity(service, intent_source.pk),
+            identity,
             desired_service_entry_defaults(service),
         )
         counts[f"services_{status}"] += 1
+        _record("desired_services", identity, status, changed)
 
     for placement in load_result.desired_service_placements:
         desired_service = _resolve_desired_service(placement.desired_service)
@@ -688,9 +787,10 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             placement.desired_endpoint,
             required=False,
         )
-        status, _obj = _validated_upsert(
+        identity = desired_service_placement_identity(placement, desired_service.pk)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredServicePlacement,
-            desired_service_placement_identity(placement, desired_service.pk),
+            identity,
             desired_service_placement_defaults(
                 placement,
                 desired_node_id=desired_node.pk,
@@ -698,6 +798,7 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             ),
         )
         counts[f"placements_{status}"] += 1
+        _record("desired_service_placements", identity, status, changed)
 
     for operational_override in load_result.desired_node_operational_overrides:
         desired_node = _resolve_desired_node(operational_override.desired_node)
@@ -711,9 +812,10 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             operational_override.tailscale_endpoint,
             required=False,
         )
-        status, _obj = _validated_upsert(
+        identity = desired_node_operational_override_identity(operational_override, desired_node.pk)
+        status, _obj, changed = _validated_upsert_diff(
             DesiredNodeOperationalOverride,
-            desired_node_operational_override_identity(operational_override, desired_node.pk),
+            identity,
             desired_node_operational_override_defaults(
                 operational_override,
                 local_endpoint_id=getattr(local_endpoint, "pk", None),
@@ -721,7 +823,9 @@ def _import_intent_rows(load_result, *, disable_missing: bool) -> dict:
             ),
         )
         counts[f"operational_overrides_{status}"] += 1
-    return counts
+        _record("desired_node_operational_overrides", identity, status, changed)
+
+    return counts, diffs
 
 
 def _validated_upsert(model, identity: dict, defaults: dict):
@@ -740,9 +844,57 @@ def _validated_upsert(model, identity: dict, defaults: dict):
     return ("created" if created else "updated"), obj
 
 
+def _validated_upsert_diff(model, identity: dict, defaults: dict):
+    """Same upsert as `_validated_upsert`, plus the exact changed-field old/new diff.
+
+    Diffs the *persisted* values (after `full_clean()`/`save()`, i.e. after model-level
+    normalization such as MAC canonicalization or config-key stripping) rather than the
+    raw incoming `defaults`, so a preview and the eventual apply never disagree on what
+    actually changed.
+    """
+
+    queryset = model.objects.filter(**identity)
+    match_count = queryset.count()
+    if match_count > 1:
+        require_unique_reference(model.__name__, match_count)
+    before = None
+    if match_count == 1:
+        existing = queryset.first()
+        before = {key: getattr(existing, key) for key in defaults}
+
+    status, obj = _validated_upsert(model, identity, defaults)
+
+    changed = {}
+    if status == "created":
+        changed = {key: {"old": None, "new": _json_safe(getattr(obj, key))} for key in defaults}
+    elif status == "updated":
+        for key in defaults:
+            old_value = before.get(key) if before else None
+            new_value = getattr(obj, key)
+            if old_value != new_value:
+                changed[key] = {"old": _json_safe(old_value), "new": _json_safe(new_value)}
+    return status, obj, changed
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def _resolve_desired_node(slug: str):
     queryset = DesiredNode.objects.filter(slug=slug)
     require_unique_reference("DesiredNode", queryset.count())
+    return queryset.get()
+
+
+def _resolve_desired_compute_platform(slug: str):
+    queryset = DesiredComputePlatform.objects.filter(slug=slug)
+    require_unique_reference("DesiredComputePlatform", queryset.count())
     return queryset.get()
 
 

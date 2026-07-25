@@ -6,6 +6,10 @@ import unittest
 from nautobot_intent_catalog.importers import (
     analysis_provenance_defaults,
     dependency_key,
+    desired_compute_instance_defaults,
+    desired_compute_instance_identity,
+    desired_compute_platform_defaults,
+    desired_compute_platform_identity,
     desired_endpoint_defaults,
     desired_endpoint_identity,
     desired_ip_range_defaults,
@@ -26,6 +30,8 @@ from nautobot_intent_catalog.importers import (
     plan_dependency_sync,
 )
 from nautobot_intent_catalog.loaders import (
+    DesiredComputeInstanceEntry,
+    DesiredComputePlatformEntry,
     DesiredEndpointEntry,
     DesiredIPRangeEntry,
     DesiredNodeEntry,
@@ -297,6 +303,7 @@ class ImporterTests(unittest.TestCase):
             desired_endpoint_defaults(endpoint),
             {
                 "ip_address": "192.0.2.10/32",
+                "mac_address": None,
                 "dns_name": "edge-router-1.example.test",
                 "dns_name_source": "intent",
                 "mdns_name": None,
@@ -340,6 +347,7 @@ class ImporterTests(unittest.TestCase):
             desired_endpoint_defaults(endpoint, desired_node=desired_node),
             {
                 "ip_address": None,
+                "mac_address": None,
                 "dns_name": "pc1.home.arpa",
                 "dns_name_source": "derived",
                 "mdns_name": "pc1.local",
@@ -545,6 +553,61 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(defaults["slug"], "infrastructure")
         self.assertEqual(defaults["name"], "infrastructure")
         self.assertEqual(defaults["source_type"], "manual")
+
+    def test_desired_compute_platform_identity_and_defaults(self) -> None:
+        platform = DesiredComputePlatformEntry(
+            name="aghub Proxmox",
+            slug="aghub-pve",
+            control_node="aghub",
+            provider_type="proxmox",
+            lifecycle="active",
+            config_schema_version="v1",
+            config={"cluster_name": "aghub-proxmox", "default_storage": "local-lvm"},
+        )
+
+        self.assertEqual(desired_compute_platform_identity(platform), {"slug": "aghub-pve"})
+        self.assertEqual(
+            desired_compute_platform_defaults(platform, control_node_id="node-id"),
+            {
+                "name": "aghub Proxmox",
+                "provider_type": "proxmox",
+                "lifecycle": "active",
+                "control_node_id": "node-id",
+                "config_schema_version": "v1",
+                "config": {"cluster_name": "aghub-proxmox", "default_storage": "local-lvm"},
+            },
+        )
+
+    def test_desired_compute_instance_identity_and_defaults(self) -> None:
+        instance = DesiredComputeInstanceEntry(
+            desired_node="agdnsmasq",
+            platform="aghub-pve",
+            instance_kind="container",
+            desired_power_state="running",
+            vcpus=1,
+            memory_mb=512,
+            root_disk_gb=8,
+            config_schema_version="v1",
+            config={"vmid": 108, "template": "local:vztmpl/x.tar.zst", "unprivileged": True},
+        )
+
+        self.assertEqual(
+            desired_compute_instance_identity("node-id"),
+            {"desired_node_id": "node-id"},
+        )
+        self.assertEqual(
+            desired_compute_instance_defaults(instance, platform_id="platform-id"),
+            {
+                "platform_id": "platform-id",
+                "instance_kind": "container",
+                "desired_power_state": "running",
+                "vcpus": 1,
+                "memory_mb": 512,
+                "root_disk_gb": 8,
+                "config_schema_version": "v1",
+                "config": {"vmid": 108, "template": "local:vztmpl/x.tar.zst", "unprivileged": True},
+            },
+        )
 
 
 if __name__ == "__main__":

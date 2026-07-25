@@ -517,6 +517,8 @@ def source_yaml_intent_source_list(request):
             "desired_nodes": result.desired_nodes,
             "desired_ip_ranges": result.desired_ip_ranges,
             "desired_endpoints": result.desired_endpoints,
+            "desired_compute_platforms": result.desired_compute_platforms,
+            "desired_compute_instances": result.desired_compute_instances,
             "desired_service_placements": result.desired_service_placements,
             "desired_node_operational_overrides": result.desired_node_operational_overrides,
             "errors": result.errors,

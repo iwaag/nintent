@@ -8,6 +8,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .loaders import (
+    DesiredComputeInstanceEntry,
+    DesiredComputePlatformEntry,
     DesiredEndpointEntry,
     DesiredIPRangeEntry,
     DesiredNodeEntry,
@@ -324,6 +326,7 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
 
     return {
         "ip_address": endpoint.ip_address,
+        "mac_address": endpoint.mac_address,
         "dns_name": dns_name,
         "dns_name_source": "intent" if dns_name_was_explicit else ("derived" if dns_name else None),
         "mdns_name": mdns_name,
@@ -338,6 +341,46 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
         "ip_policy": endpoint.ip_policy,
         "dnsmasq_record_type": endpoint.dnsmasq_record_type,
         "description": endpoint.description,
+    }
+
+
+def desired_compute_platform_identity(platform: DesiredComputePlatformEntry) -> dict[str, Any]:
+    """Return the stable identity fields for a desired compute platform."""
+
+    return {"slug": platform.slug}
+
+
+def desired_compute_platform_defaults(platform: DesiredComputePlatformEntry, control_node_id: Any) -> dict[str, Any]:
+    """Return model defaults for a desired compute platform loader entry."""
+
+    return {
+        "name": platform.name,
+        "provider_type": platform.provider_type,
+        "lifecycle": platform.lifecycle,
+        "control_node_id": control_node_id,
+        "config_schema_version": platform.config_schema_version,
+        "config": platform.config,
+    }
+
+
+def desired_compute_instance_identity(desired_node_id: Any) -> dict[str, Any]:
+    """Return the stable one-to-one identity for a desired compute instance."""
+
+    return {"desired_node_id": desired_node_id}
+
+
+def desired_compute_instance_defaults(instance: DesiredComputeInstanceEntry, platform_id: Any) -> dict[str, Any]:
+    """Return model defaults for a desired compute instance loader entry."""
+
+    return {
+        "platform_id": platform_id,
+        "instance_kind": instance.instance_kind,
+        "desired_power_state": instance.desired_power_state,
+        "vcpus": instance.vcpus,
+        "memory_mb": instance.memory_mb,
+        "root_disk_gb": instance.root_disk_gb,
+        "config_schema_version": instance.config_schema_version,
+        "config": instance.config,
     }
 
 
