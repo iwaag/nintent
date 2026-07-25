@@ -107,6 +107,33 @@ class UIContractManifestTests(unittest.TestCase):
                     url = reverse(full_name, args=[dummy_pk])
                 self.assertTrue(url.startswith("/plugins/intent-catalog/"))
 
+    def test_removed_routes_fail_reverse(self):
+        if not HAS_DJANGO:
+            self.skipTest("Requires django/nautobot")
+
+        dummy_pk = "00000000-0000-0000-0000-000000000000"
+        for name in REMOVED_UI_ROUTE_NAMES:
+            with self.subTest(name=name):
+                full_name = f"plugins:nautobot_intent_catalog:{name}"
+                with self.assertRaises(NoReverseMatch):
+                    if any(name.endswith(suffix) for suffix in ("_edit", "_delete", "_add")) and name not in (
+                        "intentsource_add",
+                        "desiredservice_add",
+                        "desirednode_add",
+                        "desiredendpoint_add",
+                        "desiredcomputeplatform_add",
+                        "desiredcomputeinstance_add",
+                        "desiredserviceplacement_add",
+                        "desirednodeoperationaloverride_add",
+                        "braindumpdocument_add",
+                        "desirediprange_add",
+                        "alignmentreview_add",
+                    ):
+                        reverse(full_name, args=[dummy_pk])
+                    else:
+                        reverse(full_name)
+
+
 
 if HAS_DJANGO:
 
