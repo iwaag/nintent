@@ -50,14 +50,9 @@
                                 <td><div style="white-space: pre-wrap;">{{ review.summary }}</div></td>
                             </tr>
                         </table>
-                        <div class="panel-body">
-                            <a href="{% url 'plugins:nautobot_intent_catalog:alignmentreview_edit' pk=review.pk %}" class="btn btn-primary">Edit review</a>
-                            <a href="{% url 'plugins:nautobot_intent_catalog:alignmentreview_delete' pk=review.pk %}" class="btn btn-danger">Delete review</a>
-                        </div>
                     {% else %}
                         <div class="panel-body">
                             <p>Unreviewed.</p>
-                            <a href="{% url 'plugins:nautobot_intent_catalog:alignmentreview_add' braindump_pk=object.pk %}" class="btn btn-primary">Add review</a>
                         </div>
                     {% endif %}
                 {% endwith %}

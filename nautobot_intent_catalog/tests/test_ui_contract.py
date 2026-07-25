@@ -133,6 +133,14 @@ class UIContractManifestTests(unittest.TestCase):
                     else:
                         reverse(full_name)
 
+    def test_tables_have_no_action_or_toggle_columns(self):
+        if not HAS_DJANGO:
+            self.skipTest("Requires django/nautobot")
+        import nautobot_intent_catalog.tables as tables_module
+
+        self.assertFalse(hasattr(tables_module, "TABLE_ACTION_BUTTONS"))
+        self.assertFalse(hasattr(tables_module, "ButtonsColumn"))
+        self.assertFalse(hasattr(tables_module, "ToggleColumn"))
 
 
 if HAS_DJANGO:
