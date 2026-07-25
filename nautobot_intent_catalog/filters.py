@@ -9,6 +9,8 @@ try:
     from .models import (
         AlignmentReview,
         BrainDumpDocument,
+        DesiredComputeInstance,
+        DesiredComputePlatform,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -129,6 +131,7 @@ else:
                 "ip_address",
                 "ip_policy",
                 "dns_name",
+                "mac_address",
                 "protocol",
                 "port",
                 "generate_dnsmasq",
@@ -145,6 +148,54 @@ else:
                 | queryset.filter(dns_name__icontains=value)
                 | queryset.filter(mdns_name__icontains=value)
                 | queryset.filter(vpn_dns_name__icontains=value)
+                | queryset.filter(mac_address__icontains=value)
+            )
+
+
+    class DesiredComputePlatformFilterSet(NautobotFilterSet):
+        """Filters for desired compute platforms."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = DesiredComputePlatform
+            fields = (
+                "id",
+                "name",
+                "slug",
+                "provider_type",
+                "lifecycle",
+                "control_node",
+                "realized_cluster",
+            )
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return queryset.filter(name__icontains=value) | queryset.filter(slug__icontains=value)
+
+
+    class DesiredComputeInstanceFilterSet(NautobotFilterSet):
+        """Filters for desired compute instances."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = DesiredComputeInstance
+            fields = (
+                "id",
+                "desired_node",
+                "platform",
+                "instance_kind",
+                "desired_power_state",
+                "realized_vm",
+            )
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return queryset.filter(desired_node__name__icontains=value) | queryset.filter(
+                desired_node__slug__icontains=value
             )
 
 

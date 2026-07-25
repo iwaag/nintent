@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>{{ object.desired_node }}</h1>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Desired Compute Instance</strong>
+                </div>
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">Desired Node</th>
+                        <td>
+                            {% if object.desired_node %}
+                                <a href="{{ object.desired_node.get_absolute_url }}">{{ object.desired_node }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Platform</th>
+                        <td>
+                            {% if object.platform %}
+                                <a href="{{ object.platform.get_absolute_url }}">{{ object.platform }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Effective Lifecycle</th>
+                        <td>{{ effective_lifecycle }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Instance Kind</th>
+                        <td>{{ object.get_instance_kind_display|default:object.instance_kind }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Power State</th>
+                        <td>{{ object.get_desired_power_state_display|default:object.desired_power_state }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">vCPUs</th>
+                        <td>{{ object.vcpus }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Memory (MiB)</th>
+                        <td>{{ object.memory_mb }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Root Disk (GiB)</th>
+                        <td>{{ object.root_disk_gb }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Config Schema Version</th>
+                        <td><code>{{ object.config_schema_version }}</code></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Config</th>
+                        <td><pre>{{ object.config|default_if_none:"{}" }}</pre></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Effective Storage</th>
+                        <td>{{ effective_storage.value|default:"-" }} ({{ effective_storage.provenance }})</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Effective Bridge</th>
+                        <td>{{ effective_bridge.value|default:"-" }} ({{ effective_bridge.provenance }})</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Realized VM</th>
+                        <td>
+                            {% if object.realized_vm %}
+                                <a href="{{ object.realized_vm.get_absolute_url }}">{{ object.realized_vm }}</a>
+                                ({{ object.realized_vm_source|default:"no source" }})
+                            {% else %}
+                                - (read-only in Phase 3)
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

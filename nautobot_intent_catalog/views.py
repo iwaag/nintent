@@ -14,6 +14,8 @@ try:
 
     from .filters import (
         BrainDumpDocumentFilterSet,
+        DesiredComputeInstanceFilterSet,
+        DesiredComputePlatformFilterSet,
         DesiredDependencyFilterSet,
         DesiredEndpointFilterSet,
         DesiredIPRangeFilterSet,
@@ -26,6 +28,8 @@ try:
     from .forms import (
         AlignmentReviewForm,
         BrainDumpDocumentForm,
+        DesiredComputeInstanceForm,
+        DesiredComputePlatformForm,
         DesiredDependencyForm,
         DesiredEndpointForm,
         DesiredHostQuickAddForm,
@@ -39,6 +43,8 @@ try:
     from .models import (
         AlignmentReview,
         BrainDumpDocument,
+        DesiredComputeInstance,
+        DesiredComputePlatform,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -53,6 +59,8 @@ try:
     )
     from .tables import (
         BrainDumpDocumentTable,
+        DesiredComputeInstanceTable,
+        DesiredComputePlatformTable,
         DesiredDependencyTable,
         DesiredEndpointTable,
         DesiredIPRangeTable,
@@ -161,7 +169,9 @@ else:
     class DesiredNodeView(ObjectView):
         """Show one desired node record."""
 
-        queryset = DesiredNode.objects.select_related("intent_source", "realized_device")
+        queryset = DesiredNode.objects.select_related(
+            "intent_source", "realized_device"
+        ).prefetch_related("controlled_compute_platforms", "desired_compute_instance")
 
         def get_extra_context(self, request, instance):
             return {"dashboard_url": _configured_dashboard_url()}
@@ -233,6 +243,78 @@ else:
         """Delete a desired endpoint record."""
 
         queryset = DesiredEndpoint.objects.all()
+
+
+    class DesiredComputePlatformListView(ObjectListView):
+        """List desired compute platform records."""
+
+        queryset = DesiredComputePlatform.objects.select_related("control_node", "realized_cluster")
+        filterset = DesiredComputePlatformFilterSet
+        table = DesiredComputePlatformTable
+
+
+    class DesiredComputePlatformView(ObjectView):
+        """Show one desired compute platform record."""
+
+        queryset = DesiredComputePlatform.objects.select_related(
+            "control_node", "realized_cluster"
+        ).prefetch_related("desired_compute_instances")
+
+
+    class DesiredComputePlatformEditView(ObjectEditView):
+        """Create or edit a desired compute platform record."""
+
+        queryset = DesiredComputePlatform.objects.all()
+        model_form = DesiredComputePlatformForm
+
+
+    class DesiredComputePlatformDeleteView(ObjectDeleteView):
+        """Delete a desired compute platform record."""
+
+        queryset = DesiredComputePlatform.objects.all()
+
+
+    class DesiredComputeInstanceListView(ObjectListView):
+        """List desired compute instance records."""
+
+        queryset = DesiredComputeInstance.objects.select_related("desired_node", "platform", "realized_vm")
+        filterset = DesiredComputeInstanceFilterSet
+        table = DesiredComputeInstanceTable
+
+
+    class DesiredComputeInstanceView(ObjectView):
+        """Show one desired compute instance record."""
+
+        queryset = DesiredComputeInstance.objects.select_related("desired_node", "platform", "realized_vm")
+
+        def get_extra_context(self, request, instance):
+            from .compute_contract import effective_lifecycle
+            from .models import _resolve_compute_effective_value
+
+            return {
+                "effective_lifecycle": effective_lifecycle(
+                    instance.desired_node.lifecycle, instance.platform.lifecycle
+                ),
+                "effective_storage": _resolve_compute_effective_value(
+                    instance, instance_key="storage", platform_key="default_storage"
+                ),
+                "effective_bridge": _resolve_compute_effective_value(
+                    instance, instance_key="bridge", platform_key="default_bridge"
+                ),
+            }
+
+
+    class DesiredComputeInstanceEditView(ObjectEditView):
+        """Create or edit a desired compute instance record."""
+
+        queryset = DesiredComputeInstance.objects.all()
+        model_form = DesiredComputeInstanceForm
+
+
+    class DesiredComputeInstanceDeleteView(ObjectDeleteView):
+        """Delete a desired compute instance record."""
+
+        queryset = DesiredComputeInstance.objects.all()
 
 
     class DesiredServicePlacementListView(ObjectListView):

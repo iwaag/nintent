@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>{{ object.name }}</h1>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Desired Compute Platform</strong>
+                </div>
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">Name</th>
+                        <td>{{ object.name }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Slug</th>
+                        <td><code>{{ object.slug }}</code></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Provider Type</th>
+                        <td>{{ object.get_provider_type_display|default:object.provider_type }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Lifecycle</th>
+                        <td>{{ object.get_lifecycle_display|default:object.lifecycle }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Control Node</th>
+                        <td>
+                            {% if object.control_node %}
+                                <a href="{{ object.control_node.get_absolute_url }}">{{ object.control_node }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Config Schema Version</th>
+                        <td><code>{{ object.config_schema_version }}</code></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Config</th>
+                        <td><pre>{{ object.config|default_if_none:"{}" }}</pre></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Realized Cluster</th>
+                        <td>
+                            {% if object.realized_cluster %}
+                                <a href="{{ object.realized_cluster.get_absolute_url }}">{{ object.realized_cluster }}</a>
+                                ({{ object.realized_cluster_source|default:"no source" }})
+                            {% else %}
+                                - (read-only in Phase 3)
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Desired Compute Instances</strong>
+                </div>
+                {% with instances=object.desired_compute_instances.all %}
+                    {% if instances %}
+                        <table class="table table-hover table-headings">
+                            <thead><tr><th>Node</th><th>Kind</th><th>Power</th><th>Realized VM</th></tr></thead>
+                            <tbody>
+                                {% for instance in instances %}
+                                    <tr>
+                                        <td><a href="{{ instance.get_absolute_url }}">{{ instance.desired_node }}</a></td>
+                                        <td>{{ instance.get_instance_kind_display|default:instance.instance_kind }}</td>
+                                        <td>{{ instance.get_desired_power_state_display|default:instance.desired_power_state }}</td>
+                                        <td>{{ instance.realized_vm|default:"-" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <div class="panel-body">No desired compute instances reference this platform.</div>
+                    {% endif %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

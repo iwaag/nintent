@@ -104,6 +104,7 @@
                                         <th>IP Policy</th>
                                         <th>DNS Name</th>
                                         <th>mDNS Name</th>
+                                        <th>MAC Address</th>
                                         <th>VPN DNS Name</th>
                                         <th>Protocol</th>
                                         <th>Port</th>
@@ -121,6 +122,7 @@
                                             <td>{{ endpoint.get_ip_policy_display|default:endpoint.ip_policy }}</td>
                                             <td>{{ endpoint.dns_name|default:"-" }}</td>
                                             <td>{{ endpoint.mdns_name|default:"-" }}</td>
+                                            <td>{{ endpoint.mac_address|default:"-" }}</td>
                                             <td>{{ endpoint.vpn_dns_name|default:"-" }}</td>
                                             <td>{{ endpoint.protocol|default:"-" }}</td>
                                             <td>{{ endpoint.port|default:"-" }}</td>
@@ -136,6 +138,32 @@
                         </div>
                     {% endif %}
                 {% endwith %}
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading"><strong>Compute Realization</strong></div>
+                <div class="panel-body">
+                    <p>
+                        <strong>Compute instance:</strong>
+                        {% if object.desired_compute_instance %}
+                            <a href="{{ object.desired_compute_instance.get_absolute_url }}">{{ object.desired_compute_instance }}</a>
+                        {% else %}
+                            None
+                        {% endif %}
+                    </p>
+                    <p>
+                        <strong>Controlled compute platforms:</strong>
+                        {% with platforms=object.controlled_compute_platforms.all %}
+                            {% if platforms %}
+                                {% for platform in platforms %}
+                                    <a href="{{ platform.get_absolute_url }}">{{ platform }}</a>{% if not forloop.last %}, {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                None
+                            {% endif %}
+                        {% endwith %}
+                    </p>
+                </div>
             </div>
         </div>
     </div>

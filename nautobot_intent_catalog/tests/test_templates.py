@@ -13,6 +13,8 @@ class ObjectViewTemplateTests(unittest.TestCase):
         )
         expected_templates = {
             "braindumpdocument.html",
+            "desiredcomputeinstance.html",
+            "desiredcomputeplatform.html",
             "desireddependency.html",
             "desiredendpoint.html",
             "desirediprange.html",

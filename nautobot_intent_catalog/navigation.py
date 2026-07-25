@@ -66,6 +66,14 @@ else:
                             name="Desired Endpoints",
                         ),
                         NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:desiredcomputeplatform_list",
+                            name="Desired Compute Platforms",
+                        ),
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:desiredcomputeinstance_list",
+                            name="Desired Compute Instances",
+                        ),
+                        NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desiredserviceplacement_list",
                             name="Service Placements",
                         ),

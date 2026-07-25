@@ -10,6 +10,8 @@ try:
     from .models import (
         AlignmentReview,
         BrainDumpDocument,
+        DesiredComputeInstance,
+        DesiredComputePlatform,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -248,6 +250,7 @@ else:
                 "port",
                 "generate_dnsmasq",
                 "dnsmasq_record_type",
+                "mac_address",
                 "realized_ip_address",
                 "description",
             )
@@ -265,6 +268,49 @@ else:
                 instance.save()
                 self.save_m2m()
             return instance
+
+
+    class DesiredComputePlatformForm(NautobotModelForm):
+        """Edit form for desired compute platforms.
+
+        Excludes ``config_schema_version`` (non-editable, always ``v1``) and the
+        ``realized_cluster``/``realized_cluster_source`` actual-link fields, which are
+        Phase 3 read-only and never written through ordinary CRUD.
+        """
+
+        class Meta:
+            model = DesiredComputePlatform
+            fields = (
+                "name",
+                "slug",
+                "provider_type",
+                "lifecycle",
+                "control_node",
+                "config",
+            )
+
+
+    class DesiredComputeInstanceForm(NautobotModelForm):
+        """Edit form for desired compute instances.
+
+        Excludes ``config_schema_version`` (non-editable, always ``v1``) and the
+        ``realized_vm``/``realized_vm_source`` actual-link fields, which are Phase 3
+        read-only and never written through ordinary CRUD. There is no lifecycle
+        field: effective lifecycle is derived from the owning node and platform.
+        """
+
+        class Meta:
+            model = DesiredComputeInstance
+            fields = (
+                "desired_node",
+                "platform",
+                "instance_kind",
+                "desired_power_state",
+                "vcpus",
+                "memory_mb",
+                "root_disk_gb",
+                "config",
+            )
 
 
     class DesiredServicePlacementForm(NautobotModelForm):

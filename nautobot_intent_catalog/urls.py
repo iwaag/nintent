@@ -66,6 +66,56 @@ if hasattr(views, "IntentSourceListView"):
                 name="desiredendpoint_delete",
             ),
             path(
+                "compute-platforms/",
+                views.DesiredComputePlatformListView.as_view(),
+                name="desiredcomputeplatform_list",
+            ),
+            path(
+                "compute-platforms/add/",
+                views.DesiredComputePlatformEditView.as_view(),
+                name="desiredcomputeplatform_add",
+            ),
+            path(
+                "compute-platforms/<uuid:pk>/",
+                views.DesiredComputePlatformView.as_view(),
+                name="desiredcomputeplatform",
+            ),
+            path(
+                "compute-platforms/<uuid:pk>/edit/",
+                views.DesiredComputePlatformEditView.as_view(),
+                name="desiredcomputeplatform_edit",
+            ),
+            path(
+                "compute-platforms/<uuid:pk>/delete/",
+                views.DesiredComputePlatformDeleteView.as_view(),
+                name="desiredcomputeplatform_delete",
+            ),
+            path(
+                "compute-instances/",
+                views.DesiredComputeInstanceListView.as_view(),
+                name="desiredcomputeinstance_list",
+            ),
+            path(
+                "compute-instances/add/",
+                views.DesiredComputeInstanceEditView.as_view(),
+                name="desiredcomputeinstance_add",
+            ),
+            path(
+                "compute-instances/<uuid:pk>/",
+                views.DesiredComputeInstanceView.as_view(),
+                name="desiredcomputeinstance",
+            ),
+            path(
+                "compute-instances/<uuid:pk>/edit/",
+                views.DesiredComputeInstanceEditView.as_view(),
+                name="desiredcomputeinstance_edit",
+            ),
+            path(
+                "compute-instances/<uuid:pk>/delete/",
+                views.DesiredComputeInstanceDeleteView.as_view(),
+                name="desiredcomputeinstance_delete",
+            ),
+            path(
                 "placements/",
                 views.DesiredServicePlacementListView.as_view(),
                 name="desiredserviceplacement_list",

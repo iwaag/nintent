@@ -3,7 +3,16 @@
 from nautobot.apps.api import NautobotModelSerializer
 from rest_framework import serializers
 
-from ..models import AlignmentReview, BrainDumpDocument, DesiredEndpoint, DesiredNode, DesiredService, IntentSource
+from ..models import (
+    AlignmentReview,
+    BrainDumpDocument,
+    DesiredComputeInstance,
+    DesiredComputePlatform,
+    DesiredEndpoint,
+    DesiredNode,
+    DesiredService,
+    IntentSource,
+)
 
 
 class BrainDumpDocumentSerializer(NautobotModelSerializer):
@@ -129,3 +138,39 @@ class DesiredEndpointSerializer(NautobotModelSerializer):
                     {source_name: f"Source must be set exactly when {value_name} is set."}
                 )
         return attrs
+
+
+class DesiredComputePlatformSerializer(NautobotModelSerializer):
+    """Serializer for desired compute platform intent.
+
+    ``realized_cluster``/``realized_cluster_source`` are Phase 3 read-only: the model field
+    itself has no ``editable=False``, so they are listed explicitly in ``read_only_fields``
+    rather than relying on DRF's auto-detection. ``config_schema_version`` is declared
+    writable here (overriding DRF's auto-read-only mapping for the model's
+    ``editable=False`` field) so an explicit non-``v1`` value is rejected by
+    ``full_clean()`` on save, while an omitted value keeps the model default of ``v1`` --
+    matching UI/YAML parity.
+    """
+
+    config_schema_version = serializers.CharField(required=False, allow_null=True)
+
+    class Meta:
+        model = DesiredComputePlatform
+        fields = "__all__"
+        read_only_fields = ("realized_cluster", "realized_cluster_source")
+
+
+class DesiredComputeInstanceSerializer(NautobotModelSerializer):
+    """Serializer for desired compute instance intent.
+
+    ``realized_vm``/``realized_vm_source`` are Phase 3 read-only for the same reason as
+    ``DesiredComputePlatformSerializer.realized_cluster``. There is no lifecycle field to
+    guard: effective lifecycle is always derived from the owning node and platform.
+    """
+
+    config_schema_version = serializers.CharField(required=False, allow_null=True)
+
+    class Meta:
+        model = DesiredComputeInstance
+        fields = "__all__"
+        read_only_fields = ("realized_vm", "realized_vm_source")

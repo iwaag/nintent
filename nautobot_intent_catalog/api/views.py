@@ -5,14 +5,26 @@ from nautobot.apps.api import NautobotModelViewSet
 from ..filters import (
     AlignmentReviewFilterSet,
     BrainDumpDocumentFilterSet,
+    DesiredComputeInstanceFilterSet,
+    DesiredComputePlatformFilterSet,
     DesiredEndpointFilterSet,
     DesiredNodeFilterSet,
     DesiredServiceFilterSet,
 )
-from ..models import AlignmentReview, BrainDumpDocument, DesiredEndpoint, DesiredNode, DesiredService
+from ..models import (
+    AlignmentReview,
+    BrainDumpDocument,
+    DesiredComputeInstance,
+    DesiredComputePlatform,
+    DesiredEndpoint,
+    DesiredNode,
+    DesiredService,
+)
 from .serializers import (
     AlignmentReviewSerializer,
     BrainDumpDocumentSerializer,
+    DesiredComputeInstanceSerializer,
+    DesiredComputePlatformSerializer,
     DesiredEndpointSerializer,
     DesiredNodeSerializer,
     DesiredServiceSerializer,
@@ -57,3 +69,19 @@ class DesiredEndpointViewSet(NautobotModelViewSet):
     queryset = DesiredEndpoint.objects.all()
     serializer_class = DesiredEndpointSerializer
     filterset_class = DesiredEndpointFilterSet
+
+
+class DesiredComputePlatformViewSet(NautobotModelViewSet):
+    """Read/write API endpoint for desired compute platforms."""
+
+    queryset = DesiredComputePlatform.objects.all()
+    serializer_class = DesiredComputePlatformSerializer
+    filterset_class = DesiredComputePlatformFilterSet
+
+
+class DesiredComputeInstanceViewSet(NautobotModelViewSet):
+    """Read/write API endpoint for desired compute instances."""
+
+    queryset = DesiredComputeInstance.objects.all()
+    serializer_class = DesiredComputeInstanceSerializer
+    filterset_class = DesiredComputeInstanceFilterSet

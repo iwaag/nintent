@@ -7,8 +7,11 @@ try:
     from django.utils.html import format_html
     from nautobot.apps.tables import BaseTable, ButtonsColumn, ToggleColumn
 
+    from .compute_contract import effective_lifecycle
     from .models import (
         BrainDumpDocument,
+        DesiredComputeInstance,
+        DesiredComputePlatform,
         DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
@@ -220,6 +223,7 @@ else:
                 "ip_address",
                 "ip_policy",
                 "dns_name",
+                "mac_address",
                 "protocol",
                 "port",
                 "generate_dnsmasq",
@@ -235,11 +239,72 @@ else:
                 "ip_address",
                 "ip_policy",
                 "dns_name",
+                "mac_address",
                 "protocol",
                 "port",
                 "generate_dnsmasq",
                 "actions",
             )
+
+
+    class DesiredComputePlatformTable(BaseTable):
+        """Desired compute platform list table."""
+
+        pk = ToggleColumn()
+        name = tables.LinkColumn()
+        control_node = tables.LinkColumn()
+        realized_cluster = tables.LinkColumn()
+        instance_count = tables.Column(empty_values=(), verbose_name="Instances")
+        actions = ButtonsColumn(DesiredComputePlatform, buttons=TABLE_ACTION_BUTTONS)
+
+        def render_instance_count(self, record):
+            return record.desired_compute_instances.count()
+
+        class Meta(BaseTable.Meta):
+            model = DesiredComputePlatform
+            fields = (
+                "pk",
+                "name",
+                "slug",
+                "provider_type",
+                "lifecycle",
+                "control_node",
+                "realized_cluster",
+                "instance_count",
+                "actions",
+            )
+            default_columns = fields
+
+
+    class DesiredComputeInstanceTable(BaseTable):
+        """Desired compute instance list table."""
+
+        pk = ToggleColumn()
+        desired_node = tables.LinkColumn()
+        platform = tables.LinkColumn()
+        realized_vm = tables.LinkColumn()
+        effective_lifecycle_display = tables.Column(empty_values=(), verbose_name="Effective Lifecycle")
+        actions = ButtonsColumn(DesiredComputeInstance, buttons=TABLE_ACTION_BUTTONS)
+
+        def render_effective_lifecycle_display(self, record):
+            return effective_lifecycle(record.desired_node.lifecycle, record.platform.lifecycle)
+
+        class Meta(BaseTable.Meta):
+            model = DesiredComputeInstance
+            fields = (
+                "pk",
+                "desired_node",
+                "platform",
+                "instance_kind",
+                "desired_power_state",
+                "effective_lifecycle_display",
+                "vcpus",
+                "memory_mb",
+                "root_disk_gb",
+                "realized_vm",
+                "actions",
+            )
+            default_columns = fields
 
 
     class DesiredServicePlacementTable(BaseTable):
