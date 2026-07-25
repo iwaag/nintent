@@ -22,7 +22,12 @@ try:
 
     from nautobot_intent_catalog import IntentCatalogConfig, navigation
     from nautobot_intent_catalog.filters import DesiredNodeFilterSet, DesiredServiceFilterSet
-    from nautobot_intent_catalog.models import DesiredNode, DesiredService, IntentSource
+    from nautobot_intent_catalog.models import (
+        DesiredComputePlatform,
+        DesiredNode,
+        DesiredService,
+        IntentSource,
+    )
     from nautobot_intent_catalog.tables import DesiredNodeTable, DesiredServiceTable
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -335,3 +340,57 @@ else:
             group_names = [g.name for g in tab.groups]
             self.assertIn("Braindump", group_names)
             self.assertIn("Desired State", group_names)
+
+    class ComputeUIRegistrationTests(TestCase):
+        """Item 15 (plan §7 Step 6.7): VM Phase 3 compute UI registration still loads."""
+
+        def setUp(self):
+            super().setUp()
+            self.add_permissions("nautobot_intent_catalog.view_desiredcomputeplatform")
+            self.control_node = _make_node(name="Compute Control Node", slug="compute-control-node")
+            self.platform = DesiredComputePlatform.objects.create(
+                name="Compute Test Platform",
+                slug="compute-test-platform",
+                control_node=self.control_node,
+            )
+
+        def test_compute_platform_list_page_renders(self):
+            response = self.client.get(
+                reverse("plugins:nautobot_intent_catalog:desiredcomputeplatform_list"),
+                HTTP_HX_REQUEST="true",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("Compute Test Platform", response.content.decode())
+
+    class ComputeAPIRegistrationTests(APITestCase):
+        """Item 15 (plan §7 Step 6.7): VM Phase 3 compute REST/GraphQL registration still loads."""
+
+        def setUp(self):
+            super().setUp()
+            self.add_permissions(
+                "nautobot_intent_catalog.view_desiredcomputeplatform",
+                "nautobot_intent_catalog.view_desiredcomputeinstance",
+            )
+            self.control_node = _make_node(name="Compute Control Node", slug="compute-control-node")
+            self.platform = DesiredComputePlatform.objects.create(
+                name="Compute Test Platform",
+                slug="compute-test-platform",
+                control_node=self.control_node,
+            )
+
+        def test_compute_platform_rest_list_returns_real_row(self):
+            url = reverse("plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-list")
+            response = self.client.get(url, **self.header)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            names = [r["name"] for r in response.data["results"]]
+            self.assertIn("Compute Test Platform", names)
+
+        def test_compute_platform_graphql_query_returns_real_row(self):
+            query = "query { desired_compute_platforms { id name } }"
+            response = self.client.post(
+                reverse("graphql-api"), {"query": query}, format="json", **self.header
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertNotIn("errors", response.data)
+            names = [p["name"] for p in response.data["data"]["desired_compute_platforms"]]
+            self.assertIn("Compute Test Platform", names)
