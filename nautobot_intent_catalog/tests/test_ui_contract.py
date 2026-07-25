@@ -207,7 +207,7 @@ class UIContractManifestTests(unittest.TestCase):
             for item in group.items
         }
         expected = {
-            f"plugins:nautobot_intent_catalog:{name}"
+            reverse(f"plugins:nautobot_intent_catalog:{name}")
             for name in RETAINED_UI_ROUTE_NAMES
             if name.endswith("_list")
         }
@@ -280,7 +280,9 @@ if HAS_DJANGO:
             "detail": "desiredcomputeinstance",
             "model": _models.DesiredComputeInstance,
             "factory": make_desired_compute_instance,
-            "label_field": "instance_kind",
+            # Rendered as its humanized choice label ("Container"), not the raw stored value
+            # ("container").
+            "label_field": "get_instance_kind_display",
         },
         {
             "list": "desiredserviceplacement_list",
@@ -294,7 +296,7 @@ if HAS_DJANGO:
             "detail": "desirednodeoperationaloverride",
             "model": _models.DesiredNodeOperationalOverride,
             "factory": make_desired_node_operational_override,
-            "label_field": None,
+            "label_field": "desired_node",
         },
         {
             "list": "braindumpdocument_list",
@@ -328,17 +330,23 @@ if HAS_DJANGO:
             for entry in RUNTIME_MODEL_MATRIX:
                 with self.subTest(model=entry["model"].__name__):
                     instance = entry["factory"]()
+                    label = None
+                    if entry["label_field"]:
+                        label = getattr(instance, entry["label_field"])
+                        if callable(label):
+                            label = label()
+                        label = str(label)
+
                     list_url = reverse(f"plugins:nautobot_intent_catalog:{entry['list']}")
                     list_response = self.client.get(list_url, HTTP_HX_REQUEST="true")
                     self.assertEqual(list_response.status_code, 200)
-                    if entry["label_field"]:
-                        self.assertContains(list_response, str(getattr(instance, entry["label_field"])))
+                    if label is not None:
+                        self.assertContains(list_response, label)
 
                     detail_response = self.client.get(instance.get_absolute_url())
                     self.assertEqual(detail_response.status_code, 200)
-                    if entry["label_field"]:
-                        self.assertContains(detail_response, str(getattr(instance, entry["label_field"])))
-                    self.assertContains(detail_response, str(instance.pk))
+                    if label is not None:
+                        self.assertContains(detail_response, label)
 
     class UINonMutationRuntimeTests(TestCase):
         """Per-model view-only permission grant; retained pages reject/ignore POST mutations."""

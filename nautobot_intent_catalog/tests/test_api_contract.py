@@ -198,6 +198,11 @@ if HAS_DJANGO:
             self.add_permissions(
                 "nautobot_intent_catalog.view_desirednode",
                 "nautobot_intent_catalog.change_desirednode",
+                # delete_desirednode is granted even though DELETE is disallowed for this
+                # ViewSet, so the 405 assertions below prove the method-not-allowed override
+                # itself, not merely that the user lacks delete permission (which would 403
+                # before ever reaching that code).
+                "nautobot_intent_catalog.delete_desirednode",
                 "nautobot_intent_catalog.view_braindumpdocument",
                 "nautobot_intent_catalog.add_braindumpdocument",
                 "nautobot_intent_catalog.change_braindumpdocument",
@@ -218,6 +223,9 @@ if HAS_DJANGO:
                 {
                     "id", "name", "slug", "node_type", "lifecycle", "role",
                     "realized_device", "realized_device_source", "created", "last_updated",
+                    # Universal Nautobot fields added by NautobotModelSerializer regardless of
+                    # Meta.fields; not declared by DesiredNodeSerializer itself.
+                    "display", "object_type", "notes_url", "custom_fields",
                 },
             )
 
@@ -339,7 +347,9 @@ if HAS_DJANGO:
             ):
                 with self.subTest(query=query):
                     response = self.client.post(self.api_url, {"query": query}, format="json", **self.header)
-                    self.assertEqual(response.status_code, status.HTTP_200_OK)
+                    # graphene-django returns 400 (not 200-with-errors) for a query document
+                    # that fails schema validation, e.g. an unknown root field.
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
                     self.assertTrue(response.data.get("errors"))
                     self.assertFalse(response.data.get("data"))
 

@@ -198,7 +198,11 @@ else:
             content = response.content.decode()
             for needle in (
                 'type="submit"',
-                "csrf_token",
+                # The rendered CSRF hidden-input field name (Django's `{% csrf_token %}` tag
+                # output). Not "csrf_token" alone: that substring also appears in the base
+                # Nautobot page chrome's `nautobot_csrf_token` JS variable on every page,
+                # mutation or not.
+                "csrfmiddlewaretoken",
                 "Add Alignment Review",
                 "Edit",
                 "Delete",

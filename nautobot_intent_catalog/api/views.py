@@ -1,7 +1,9 @@
 """REST API views for the Nautobot Intent Catalog App."""
 
 from django.http import HttpResponseNotAllowed
+from drf_spectacular.utils import extend_schema
 from nautobot.apps.api import NautobotModelViewSet
+from nautobot.core.api.serializers import BulkOperationSerializer
 
 from ..filters import (
     AlignmentReviewFilterSet,
@@ -40,6 +42,7 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
     def bulk_update(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
+    @extend_schema(request=BulkOperationSerializer(many=True))
     def bulk_destroy(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
@@ -64,6 +67,7 @@ class AlignmentReviewViewSet(NautobotModelViewSet):
     def bulk_update(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
+    @extend_schema(request=BulkOperationSerializer(many=True))
     def bulk_destroy(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
@@ -94,5 +98,6 @@ class DesiredNodeViewSet(NautobotModelViewSet):
     def bulk_update(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
 
+    @extend_schema(request=BulkOperationSerializer(many=True))
     def bulk_destroy(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
