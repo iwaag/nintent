@@ -29,6 +29,18 @@ from .intent_contract import (
     validate_endpoint_reference,
 )
 
+CANONICAL_ROOTS = (
+    "intent_sources",
+    "desired_nodes",
+    "desired_endpoints",
+    "desired_ip_ranges",
+    "desired_compute_platforms",
+    "desired_compute_instances",
+    "desired_services",
+    "desired_service_placements",
+    "desired_node_operational_overrides",
+)
+
 DEFAULT_INTENT_SOURCES_ENV = "NAUTOBOT_INTENT_SOURCES_FILE"
 DEFAULT_CATALOG_PATHS = ("catalog-info.yaml", "backstage/catalog-info.yaml")
 DEFAULT_BASIC_FILE_PATHS = (
@@ -279,6 +291,13 @@ def load_intent_sources(path: Path) -> IntentSourceLoadResult:
                 "desired_node_operational_configs is not supported; use "
                 "desired_node_operational_overrides."
             ],
+        )
+
+    unknown_roots = sorted(str(key) for key in data if key not in CANONICAL_ROOTS)
+    if unknown_roots:
+        return IntentSourceLoadResult(
+            source_path=source_path,
+            errors=[f"Unknown top-level root(s): {', '.join(unknown_roots)}."],
         )
 
     intent_sources: list[IntentSourceEntry] = []

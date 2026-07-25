@@ -18,7 +18,6 @@ from .loaders import (
     DesiredServicePlacementEntry,
     IntentSourceEntry,
 )
-from .names import default_dns_name, default_mdns_name
 
 
 SOURCE_CONFIG_FIELDS = (
@@ -308,7 +307,13 @@ def desired_endpoint_identity(endpoint: DesiredEndpointEntry, desired_node_id: A
 
 
 def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any | None = None) -> dict[str, Any]:
-    """Return model defaults for a desired endpoint loader entry."""
+    """Return model defaults for a desired endpoint loader entry.
+
+    An omitted `dns_name`/`mdns_name` stays omitted -- Import never synthesizes a hidden
+    default for either field (plan.md interface_contract/p1 Section 4.3): the checked-in YAML
+    is the single explicit source of desired DNS/mDNS intent, not a Quick-Host-Add-era
+    convenience default computed from the node name.
+    """
 
     if endpoint.ip_address and not endpoint.ip_policy:
         raise ValueError("Desired endpoint with ip_address requires ip_policy.")
@@ -317,12 +322,6 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
     mdns_name = _optional_str(endpoint.mdns_name)
     dns_name_was_explicit = dns_name is not None
     mdns_name_was_explicit = mdns_name is not None
-    if desired_node is not None and endpoint.name == "primary" and endpoint.endpoint_type == "primary":
-        node_name = getattr(desired_node, "name", None)
-        if dns_name is None:
-            dns_name = default_dns_name(node_name)
-        if mdns_name is None:
-            mdns_name = default_mdns_name(node_name)
 
     return {
         "ip_address": endpoint.ip_address,

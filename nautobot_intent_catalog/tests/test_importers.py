@@ -329,10 +329,10 @@ class ImporterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires ip_policy"):
             desired_endpoint_defaults(endpoint)
 
-    def test_primary_desired_endpoint_defaults_missing_names_from_resolved_node(self) -> None:
-        # ip_policy="external" here mirrors what loaders._parse_desired_endpoint already
-        # resolves for a no-address entry before it reaches desired_endpoint_defaults;
-        # the importer is a pure projection and no longer supplies a second fallback.
+    def test_primary_desired_endpoint_defaults_omitted_names_stay_omitted(self) -> None:
+        # interface_contract/p1 Section 4.3: Import never synthesizes a hidden DNS/mDNS
+        # default from the node name -- an omitted name stays omitted even for the
+        # primary/primary endpoint a Quick-Host-Add-era import used to special-case.
         endpoint = DesiredEndpointEntry(
             name="primary",
             desired_node="pc1",
@@ -348,10 +348,10 @@ class ImporterTests(unittest.TestCase):
             {
                 "ip_address": None,
                 "mac_address": None,
-                "dns_name": "pc1.home.arpa",
-                "dns_name_source": "derived",
-                "mdns_name": "pc1.local",
-                "mdns_name_source": "derived",
+                "dns_name": None,
+                "dns_name_source": None,
+                "mdns_name": None,
+                "mdns_name_source": None,
                 "vpn_dns_name": None,
                 "protocol": None,
                 "port": None,
