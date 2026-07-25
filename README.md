@@ -69,11 +69,25 @@ operator commands, see [README_QUICK.md](README_QUICK.md).
 
 ## Intent Source YAML
 
-The loader accepts the current `intent_sources`, `desired_nodes`,
-`desired_endpoints`, `desired_ip_ranges`, `desired_service_placements`, and
-`desired_node_operational_overrides` roots. The removed
-`desired_node_operational_configs` root is rejected; ordinary OS, policy, path, and endpoint
-selection are derived by nctl rather than imported.
+The loader accepts exactly nine top-level roots, in this order: `intent_sources`,
+`desired_nodes`, `desired_endpoints`, `desired_ip_ranges`, `desired_compute_platforms`,
+`desired_compute_instances`, `desired_services`, `desired_service_placements`, and
+`desired_node_operational_overrides`. Any other top-level key is a load error before any section
+is normalized — including the two removed aliases `service_repositories` and
+`desired_node_operational_configs`; ordinary OS, policy, path, and endpoint selection are derived
+by nctl rather than imported. A missing known root is a no-op (an operator may supply a partial
+document); an unknown root always fails.
+
+`nauto/seed/intent_sources.yaml` is the one checked-in bulk desired-state document (moved from
+`nauto/seed/home_cluster.yaml`, which now holds only native Nautobot prerequisites). The `Import
+Intent Sources` Job reads this file: it defaults to a zero-write preview (`apply=false`) and
+requires an explicit `apply=true` to commit. Omitting a row from the document never disables,
+deletes, retires, or unlinks the corresponding existing row — it is silently preserved. An
+existing `DesiredNode`'s `lifecycle` and every realized link/source field (`realized_device`,
+`realized_ip_address`, `realized_cluster`, `realized_vm`, and their `_source` fields) are never
+YAML-owned; an existing `DesiredService`'s `name`/`slug`/`display_name`/`requirements` and every
+Analyze-owned catalog/source field are preserved on re-import, and a YAML value that disagrees
+with a preserved field blocks the whole row as a conflict rather than overwriting it silently.
 
 ```yaml
 intent_sources:

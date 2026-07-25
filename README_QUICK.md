@@ -34,13 +34,15 @@ read directly by `nctl render production`; nintent has no profile projection or 
 
 | Job | Purpose |
 |---|---|
-| `Preview Intent Source Analysis` | Analyze configured sources without writes. |
-| `Import Intent Sources` | Import strict desired-state YAML into ledger models. |
-| `Analyze Intent Sources` | Analyze source catalogs and persist services/dependencies. |
+| `Import Intent Sources` | Preview (default) or apply the strict `intent_sources.yaml` document. `apply=false` (default) performs zero database writes and always writes `intent-import-result.json`; `apply=true` commits one atomic transaction and refetches every planned row to confirm it. |
+| `Analyze Intent Sources` | Preview (default) or apply source-catalog analysis. `apply=false` (default) performs zero database writes and always writes `intent-analysis-result.json`; `apply=true` commits only analysis-owned fields (`IntentSource` status, `DesiredService` catalog fields, `DesiredDependency` rows) and preserves every operator-owned field. |
 | `Reconcile Desired IPAM Intent` | Dry-run/apply explicit-IP endpoints into `IPAddress` (`dhcp_reserved` always eligible; `static`/`external` need a matching self-observation). |
 
-The old Evaluate Jobs, production inventory export Job, profile sync Job, `IntentEvaluation`, and
-`DeploymentProfileProjection` were removed in 0.6.0.
+Both Import and Analyze default to a safe, zero-write preview; pass `apply=true` explicitly to
+commit. Neither Job ever infers a delete/retire/disable from a YAML omission. `Preview Intent
+Source Analysis` was removed — Analyze's `apply=false` preview covers the same read-only
+information. The old Evaluate Jobs, production inventory export Job, profile sync Job,
+`IntentEvaluation`, and `DeploymentProfileProjection` were removed in 0.6.0.
 
 ## nctl workflows
 
