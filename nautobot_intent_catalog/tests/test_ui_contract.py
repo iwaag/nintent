@@ -13,7 +13,9 @@ try:
     from rest_framework import status
     from nautobot.core.testing import TestCase
 
-    from nautobot_intent_catalog import navigation
+    from nautobot_intent_catalog import IntentCatalogConfig, navigation
+    from nautobot_intent_catalog import tables as tables_module
+    from nautobot_intent_catalog.filters import DesiredNodeFilterSet, DesiredServiceFilterSet
 except ImportError:  # pragma: no cover
     HAS_DJANGO = False
 else:
@@ -46,6 +48,7 @@ RETAINED_UI_ROUTE_NAMES = [
 ]
 
 REMOVED_UI_ROUTE_NAMES = [
+    "dashboard_redirect",
     "source_yaml_list",
     "source_list",
     "desiredhost_quick_add",
@@ -86,7 +89,7 @@ REMOVED_UI_ROUTE_NAMES = [
     "desirediprange_delete",
 ]
 
-assert len(REMOVED_UI_ROUTE_NAMES) == 38, len(REMOVED_UI_ROUTE_NAMES)
+assert len(REMOVED_UI_ROUTE_NAMES) == 39, len(REMOVED_UI_ROUTE_NAMES)
 
 # Literal URL prefix (relative to `/plugins/intent-catalog/`) for each retained model's list
 # route, and whether that model ever had a removed `.../add/` route (DesiredDependency rows are
@@ -184,6 +187,7 @@ class UIContractManifestTests(unittest.TestCase):
         for path in (
             "/plugins/intent-catalog/sources/yaml/",
             "/plugins/intent-catalog/nodes/quick-add/",
+            "/plugins/intent-catalog/dashboard/",
         ):
             with self.subTest(path=path):
                 self.assertEqual(client.get(path).status_code, 404)
@@ -191,11 +195,26 @@ class UIContractManifestTests(unittest.TestCase):
     def test_tables_have_no_action_or_toggle_columns(self):
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
-        import nautobot_intent_catalog.tables as tables_module
-
         self.assertFalse(hasattr(tables_module, "TABLE_ACTION_BUTTONS"))
         self.assertFalse(hasattr(tables_module, "ButtonsColumn"))
         self.assertFalse(hasattr(tables_module, "ToggleColumn"))
+
+    def test_node_and_service_metadata_omit_reconciliation_dashboard_surfaces(self):
+        if not HAS_DJANGO:
+            self.skipTest("Requires django/nautobot")
+        for filterset, table in (
+            (DesiredNodeFilterSet, tables_module.DesiredNodeTable),
+            (DesiredServiceFilterSet, tables_module.DesiredServiceTable),
+        ):
+            with self.subTest(model=table.Meta.model.__name__):
+                self.assertNotIn("reconciliation_status", filterset.Meta.fields)
+                self.assertNotIn("reconciliation_status", filterset.base_filters)
+                self.assertNotIn("reconciliation_status", table.base_columns)
+                self.assertNotIn("reconciliation_status", table.Meta.fields)
+                self.assertNotIn("reconciliation_status", table.Meta.default_columns)
+        self.assertFalse(hasattr(tables_module, "RECONCILIATION_BADGE_CLASSES"))
+        self.assertFalse(hasattr(tables_module, "_render_reconciliation_status"))
+        self.assertNotIn("dashboard_url", IntentCatalogConfig.default_settings)
 
     def test_navigation_only_links_the_eleven_retained_lists(self):
         if not HAS_DJANGO:

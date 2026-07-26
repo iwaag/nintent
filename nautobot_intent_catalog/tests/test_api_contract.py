@@ -353,6 +353,17 @@ if HAS_DJANGO:
                     self.assertTrue(response.data.get("errors"))
                     self.assertFalse(response.data.get("data"))
 
+        def test_removed_reconciliation_fields_fail_schema_validation(self):
+            for query in (
+                "query { desired_nodes { id reconciliation_status } }",
+                "query { desired_services { id reconciliation_checked_at } }",
+            ):
+                with self.subTest(query=query):
+                    response = self.client.post(self.api_url, {"query": query}, format="json", **self.header)
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    self.assertTrue(response.data.get("errors"))
+                    self.assertFalse(response.data.get("data"))
+
         def test_every_retained_root_queries_successfully(self):
             node = models.DesiredNode.objects.create(name="gqln", slug="gqln")
             query = """
