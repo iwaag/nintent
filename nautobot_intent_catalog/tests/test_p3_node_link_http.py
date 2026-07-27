@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Thread
+from unittest.mock import patch
 try:
     from django.test import LiveServerTestCase
 
@@ -27,7 +28,7 @@ try:
     from nctl_core.config import Config
     from nctl_core.events import OperationLog
     from nctl_core.nautobot import NautobotClient
-    from nctl_core.reconcile.executor import _execute_action
+    from nctl_core.reconcile.executor import _execute_action, run_reconcile
     from nctl_core.reconcile.ledger import LedgerActionError, execute_link_actual_node
     from nctl_core.reconcile.model import PlanScope
     from nctl_core.reconcile.planner import build_plan
@@ -324,6 +325,72 @@ if HAS_RUNTIME:
                 self.assertTrue(executed.result.mutated)
                 self.assertIn("node_link_not_confirmed", executed.result.error or "")
                 events = [json.loads(line) for line in op.path.read_text().splitlines()]
+                completed = [event for event in events if event["event"] == "action_completed"]
+                self.assertEqual(len(completed), 1)
+                self.assertFalse(completed[0]["data"]["success"])
+                self.assertTrue(completed[0]["data"]["mutated"])
+
+        def test_run_reconcile_retains_real_http_mutation_and_refreshes_final_drift(self) -> None:
+            """A real PATCH/reset reaches the public reconcile loop and is never rewritten as no mutation.
+
+            This is deliberately narrower than the focused executor matrix: its
+            unique owner is the actual GraphQL/PATCH/GraphQL transport plus the
+            public ``run_reconcile`` final-drift path.  The reset callback is
+            test-owned and runs only after Nautobot accepted the real PATCH.
+            """
+            with TemporaryDirectory(prefix="p3-node-link-reconcile-") as directory:
+                root = Path(directory)
+                token_file = root / "test-token"
+                token_file.write_text(self.token.key)
+                playbook_dir = root / "ansible"
+                (playbook_dir / "vars").mkdir(parents=True)
+                (playbook_dir / "vars" / "deployment_profiles.yml").write_text(
+                    "deployment_profiles: {}\ndeployment_profile_reconciliation: {}\n"
+                )
+                cfg = Config.model_validate(
+                    {
+                        "nautobot": {"url": self.live_server_url, "token_file": token_file},
+                        "inventory": {"dumps_dir": root / "dumps"},
+                        "events": {"log_dir": root / "events"},
+                        "ansible": {
+                            "playbook_dir": playbook_dir,
+                            "inventory": "inventories/generated/hosts_intent.yml",
+                        },
+                        "reconcile": {"lock_path": root / "reconcile.lock"},
+                        "ssh": {"known_hosts_file": root / "known_hosts", "lock_path": root / "ssh.lock"},
+                        "source_path": root / "nctl.toml",
+                    }
+                )
+                original_rest_patch = NautobotClient.rest_patch
+
+                def reset_after_real_patch(client, path, payload):
+                    response = original_rest_patch(client, path, payload)
+                    if path == f"/api/plugins/intent-catalog/nodes/{self.node.pk}/":
+                        DesiredNode.objects.filter(pk=self.node.pk).update(
+                            realized_device=None,
+                            realized_device_source=None,
+                        )
+                    return response
+
+                with patch.object(NautobotClient, "rest_patch", reset_after_real_patch):
+                    envelope = run_reconcile(cfg, host=self.node.slug, apply_changes=True, max_rounds=2)
+
+                self.assertFalse(envelope.ok)
+                self.assertEqual(envelope.data.state, "non_converged")
+                self.assertTrue(any(error.code == "no_progress" for error in envelope.errors))
+                self.assertEqual(len(envelope.data.rounds), 1)
+                [result] = [
+                    result
+                    for result in envelope.data.rounds[0].actions
+                    if result.reconciler_id == "link_actual_node"
+                ]
+                self.assertFalse(result.success)
+                self.assertTrue(result.mutated)
+                self.assertIn("node_link_not_confirmed", result.error or "")
+                self.assertTrue(envelope.data.progress_made)
+                self.assertTrue(envelope.data.final_drift_path)
+                self.assertTrue(Path(envelope.data.final_drift_path).is_file())
+                events = [json.loads(line) for line in Path(envelope.data.event_log_path).read_text().splitlines()]
                 completed = [event for event in events if event["event"] == "action_completed"]
                 self.assertEqual(len(completed), 1)
                 self.assertFalse(completed[0]["data"]["success"])
