@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Thread
@@ -55,6 +56,10 @@ if HAS_RUNTIME:
                 "nautobot_intent_catalog.view_desirednode",
                 "nautobot_intent_catalog.change_desirednode",
                 "dcim.view_device",
+                "virtualization.view_cluster",
+                "virtualization.view_virtualmachine",
+                "virtualization.view_vminterface",
+                "ipam.view_ipaddress",
             )
             self.token = Token.objects.create(user=self.user)
 
@@ -395,3 +400,128 @@ if HAS_RUNTIME:
                 self.assertEqual(len(completed), 1)
                 self.assertFalse(completed[0]["data"]["success"])
                 self.assertTrue(completed[0]["data"]["mutated"])
+
+        def test_nodeutils_report_builder_ingest_and_actual_graphql_share_one_schema(self) -> None:
+            """Step 6's one-way producer -> ORM ingest -> GraphQL reader conformance path."""
+            import nodeutils_collect
+
+            from jobs.ingest_nodeutils_inventory import IngestNodeutilsInventory
+            from nctl_core.sources.actual import fetch_actual_snapshot
+            from nautobot.ipam.models import Namespace
+
+            collected_at = "2026-07-27T00:00:00+00:00"
+            inventory = {
+                "collected_at": collected_at,
+                "system": "Linux",
+                "hostname": "p3-schema-node",
+                "fqdn": "p3-schema-node.example.test",
+                "serial_number": "P3-SCHEMA-1",
+                "os_name": "Ubuntu",
+                "os_version": "24.04",
+                "architecture": "arm64",
+                "hardware": {"manufacturer": "Generic"},
+                "cpu_model": "synthetic",
+                "cpu_logical_cores": 2,
+                "memory_gb": 4,
+                "disk": {"root_total_gb": 20},
+                "primary_interface": {"name": "eth0"},
+                "primary_mac_address": "02:00:00:00:00:61",
+                "services": {
+                    "observed_services": {
+                        "dnsmasq": {
+                            "state": "active",
+                            "managed_files": {
+                                "records": {
+                                    "path": "/etc/dnsmasq.d/nintent-records.conf",
+                                    "sha256": "a" * 64,
+                                    "size": 17,
+                                    "status": "present",
+                                    "checked_at": collected_at,
+                                }
+                            },
+                        }
+                    }
+                },
+                "proxmox": {
+                    "schema_version": "nodeutils.proxmox.v1",
+                    "enabled": True,
+                    "detected": True,
+                    "mode": "auto",
+                    "inventory_source": "p3-schema",
+                    "observed_at": collected_at,
+                    "collection": {"state": "partial", "errors": [], "sections": {}},
+                    "cluster": {
+                        "name": "p3-schema-proxmox",
+                        "name_source": "standalone_node_fallback",
+                        "identity_value": "p3-schema-node",
+                        "node_count": 1,
+                        "observed_node_names": ["p3-schema-node"],
+                    },
+                    "qemu_vms": [],
+                    "lxc_containers": [
+                        {
+                            "guest_type": "lxc", "vmid": 601, "node": "p3-schema-node",
+                            "name": "p3-schema-valid", "proxmox_status": "running", "status": "Active",
+                            "vcpus": 1, "memory_mb": 512, "disk_gb": 8,
+                            "observation": {"state": "complete"},
+                            "interfaces": {"config_interfaces": [], "agent_interfaces": [], "joined_interfaces": [], "unmatched": []},
+                            "rootfs": {"storage": "local-lvm", "volume": "vm-601-disk-0", "size_gb": 8},
+                        },
+                        {
+                            "guest_type": "lxc", "vmid": -1, "node": "p3-schema-node",
+                            "name": "p3-schema-invalid", "proxmox_status": "running", "status": "Active",
+                            "vcpus": 1, "memory_mb": 512, "disk_gb": 8,
+                            "observation": {"state": "complete"},
+                            "interfaces": {"config_interfaces": [], "agent_interfaces": [], "joined_interfaces": [], "unmatched": []},
+                            "rootfs": {"storage": "local-lvm", "volume": "vm-invalid", "size_gb": 8},
+                        },
+                    ],
+                    "storage_content": [],
+                },
+            }
+            with patch.object(nodeutils_collect, "get_machine_id", return_value="p3-schema-machine"):
+                report = nodeutils_collect.build_inventory_report({"purpose": "p3-schema"}, inventory)
+            self.assertEqual(report["schema_version"], nodeutils_collect.SCHEMA_VERSION)
+
+            job = IngestNodeutilsInventory()
+            job.logger = logging.getLogger("p3.schema.ingest")
+            artifacts: list[tuple[str, str]] = []
+            job.create_file = lambda name, content: artifacts.append((name, content))
+            Namespace.objects.get_or_create(name="Global")
+            # The real ingestor intentionally defers Proxmox rows until its
+            # observer Device has a persistent UUID. Establish that Device
+            # with the same builder-produced report, then submit the exact
+            # same report bytes plus its producer-owned Proxmox subtree.
+            device_report = json.loads(json.dumps(report))
+            del device_report["facts"]["proxmox"]
+            job.run(
+                report_batch=json.dumps({"reports": [{"source": "p3-schema", "text": json.dumps(device_report)}]}),
+                policy_file="seed/nodeutils_ingest.yaml", dry_run=False, max_report_age_hours=72,
+                max_report_bytes=1024 * 1024,
+            )
+            artifacts.clear()
+            job.run(
+                report_batch=json.dumps({"reports": [{"source": "p3-schema", "text": json.dumps(report)}]}),
+                policy_file="seed/nodeutils_ingest.yaml", dry_run=False, max_report_age_hours=72,
+                max_report_bytes=1024 * 1024,
+            )
+            summary = json.loads(artifacts[0][1])
+            proxmox = summary["results"][0]["proxmox"]
+            self.assertEqual(proxmox["observation_state"], "partial")
+            self.assertEqual(proxmox["object_counts"]["vm"]["created"], 1)
+            self.assertIn("invalid_vmid", {error["code"] for error in proxmox["guest_errors"]})
+
+            with self._client() as client:
+                actual = fetch_actual_snapshot(client)
+            device = next(item for item in actual.devices if item.name == "p3-schema-node")
+            facts = device.actual_facts()
+            self.assertEqual(facts.collected_at, collected_at)
+            self.assertEqual(facts.inventory_source, "nodeutils")
+            self.assertEqual(facts.network_interface, "eth0")
+            self.assertEqual(facts.observed_services["dnsmasq"]["managed_files"]["records"]["path"], "/etc/dnsmasq.d/nintent-records.conf")
+            self.assertEqual(facts.observed_services["dnsmasq"]["managed_files"]["records"]["sha256"], "a" * 64)
+            cluster = next(item for item in actual.clusters if item.name == "p3-schema-proxmox")
+            self.assertEqual(cluster.proxmox.observation_state, "partial")
+            vm = next(item for item in actual.virtual_machines if item.name == "p3-schema-valid")
+            self.assertEqual((vm.proxmox.vmid, vm.proxmox.guest_type), (601, "lxc"))
+            self.assertFalse(any(item.name == "p3-schema-invalid" for item in actual.virtual_machines))
