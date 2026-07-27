@@ -1,8 +1,10 @@
-"""Django-free pure contracts for desired compute-platform/instance intent.
+"""Django-free semantic owner for desired compute-platform/instance intent.
 
 These helpers are shared by the model layer, forms, REST serializers, and the
 strict YAML loader/importer so every write path converges on one validation,
-normalization, effective-lifecycle, and effective-default implementation.
+normalization, effective-lifecycle, effective-default, NIC/address, and
+realized-link/source implementation. ``compute_conformance`` publishes its
+observed behavior for nctl's fixture-bound consumer test.
 """
 
 from __future__ import annotations
