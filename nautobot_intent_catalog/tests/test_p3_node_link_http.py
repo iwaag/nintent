@@ -60,6 +60,12 @@ if HAS_RUNTIME:
                 "virtualization.view_virtualmachine",
                 "virtualization.view_vminterface",
                 "ipam.view_ipaddress",
+                "nautobot_intent_catalog.add_braindumpdocument",
+                "nautobot_intent_catalog.change_braindumpdocument",
+                "nautobot_intent_catalog.view_braindumpdocument",
+                "nautobot_intent_catalog.add_alignmentreview",
+                "nautobot_intent_catalog.change_alignmentreview",
+                "nautobot_intent_catalog.view_alignmentreview",
             )
             self.token = Token.objects.create(user=self.user)
 
@@ -525,3 +531,36 @@ if HAS_RUNTIME:
             vm = next(item for item in actual.virtual_machines if item.name == "p3-schema-valid")
             self.assertEqual((vm.proxmox.vmid, vm.proxmox.guest_type), (601, "lxc"))
             self.assertFalse(any(item.name == "p3-schema-invalid" for item in actual.virtual_machines))
+
+        def test_authorized_prose_writes_do_not_change_real_drift_or_plan(self) -> None:
+            """Braindump/Review REST writes are intentionally outside the desired snapshot."""
+            from nctl_core.braindump import build_braindump_create, build_braindump_review
+
+            _snapshot, before_drift, before_plan = self._plan()
+            before_codes = sorted(diff.code for target in before_drift.targets for diff in target.diffs)
+            before_actions = [action.model_dump(mode="json") for action in before_plan.actions]
+            with TemporaryDirectory(prefix="p3-prose-authority-") as directory:
+                root = Path(directory)
+                token_file = root / "test-token"
+                token_file.write_text(self.token.key)
+                cfg = Config.model_validate(
+                    {
+                        "nautobot": {"url": self.live_server_url, "token_file": token_file},
+                        "inventory": {"dumps_dir": root / "dumps"},
+                        "events": {"log_dir": root / "events"},
+                        "ansible": {"playbook_dir": root / "ansible", "inventory": "inventory.yml"},
+                        "source_path": root / "nctl.toml",
+                    }
+                )
+                created = build_braindump_create(
+                    cfg, title="p3 prose authority", authorship="user_direct", body="test-only prose"
+                )
+                self.assertTrue(created.ok)
+                reviewed = build_braindump_review(cfg, created.data.braindump.id, summary="test-only review")
+                self.assertTrue(reviewed.ok)
+
+            _fresh_snapshot, after_drift, after_plan = self._plan()
+            after_codes = sorted(diff.code for target in after_drift.targets for diff in target.diffs)
+            after_actions = [action.model_dump(mode="json") for action in after_plan.actions]
+            self.assertEqual(after_codes, before_codes)
+            self.assertEqual(after_actions, before_actions)
