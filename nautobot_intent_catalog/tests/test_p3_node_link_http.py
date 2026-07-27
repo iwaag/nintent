@@ -8,6 +8,8 @@ rows; no persistent Nautobot service or credential participates.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 try:
     from django.test import LiveServerTestCase
 
@@ -250,3 +252,37 @@ if HAS_RUNTIME:
             self.node.refresh_from_db()
             self.assertIsNone(self.node.realized_device_id)
             self.assertIsNone(self.node.realized_device_source)
+
+        def test_malformed_graphql_pre_read_over_real_loopback_http_has_zero_patch(self) -> None:
+            """The client crosses a real HTTP boundary; the fixture owns only its malformed reply."""
+            action = self._link_action()
+            calls: list[tuple[str, str]] = []
+
+            class MalformedGraphQLHandler(BaseHTTPRequestHandler):
+                def do_POST(self):  # noqa: N802 - stdlib handler API
+                    calls.append((self.command, self.path))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"data":{"desired_nodes":"not-a-list"}}')
+
+                def log_message(self, *_args):
+                    pass
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), MalformedGraphQLHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with NautobotClient(f"http://127.0.0.1:{server.server_port}", "test-only") as client:
+                    with self.assertRaises(LedgerActionError) as caught:
+                        execute_link_actual_node(client, action)
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, "node_fetch_failed")
+            self.assertFalse(caught.exception.mutated)
+            self.assertEqual(calls, [("POST", "/api/graphql/")])
+            self.node.refresh_from_db()
+            self.assertIsNone(self.node.realized_device_id)
