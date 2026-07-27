@@ -42,6 +42,13 @@ Desired-state reference validation used by the YAML loader lives in the Django-f
 `intent_contract.py`. Production composition, profile validation, actual-fact policy, and drift
 comparators live and are tested in nctl; do not reintroduce those processing rules here.
 
+`compute_contract.py` is the semantic owner for the shared compute contract. Its Django-free
+`compute_conformance.py` executes that owner over the ordered JSON-only case set and publishes the
+deterministic fixture consumed by nctl. Change compute semantics here first, regenerate the
+consumer fixture with `devtests/test_strategy/generate_compute_conformance.py` in the parent
+repository, then run both the superproject freshness gate and nctl's replay test; nctl must not
+import this module at runtime.
+
 The local suite does not load Django/Nautobot. Model migrations, GraphQL registration, Job discovery,
 and UI views must also be verified in the running Nautobot environment after deployment.
 The repository [test strategy command matrix](../README_DEV.md#test-strategy-command-matrix) is the
