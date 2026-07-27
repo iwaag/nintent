@@ -1,0 +1,252 @@
+"""Phase 3 real-HTTP proof for the DesiredNode ledger link.
+
+This module is intentionally collected only by the Nautobot runtime command.
+It uses Django's loopback live server, a test-only token, and test-database
+rows; no persistent Nautobot service or credential participates.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+try:
+    from django.test import LiveServerTestCase
+
+    from nautobot.core.testing.mixins import NautobotTestCaseMixin
+    from nautobot.dcim.models import Device
+    from nautobot.users.models import Token
+
+    from nautobot_intent_catalog.models import DesiredNode
+    from nctl_core.drift.context import DriftContext
+    from nctl_core.drift.engine import compute_drift
+    from nctl_core.nautobot import NautobotClient
+    from nctl_core.reconcile.ledger import LedgerActionError, execute_link_actual_node
+    from nctl_core.reconcile.model import PlanScope
+    from nctl_core.reconcile.planner import build_plan
+    from nctl_core.sources.actual import fetch_actual_snapshot
+    from nctl_core.sources.desired import fetch_desired_snapshot
+    from nctl_core.sources.snapshot import SourceSnapshot
+except ImportError:  # pragma: no cover - local Django-free discovery
+    HAS_RUNTIME = False
+else:
+    HAS_RUNTIME = True
+
+
+if HAS_RUNTIME:
+
+    class DesiredNodeLinkRealHttpTests(NautobotTestCaseMixin, LiveServerTestCase):
+        """Use actual loopback GraphQL/PATCH/GraphQL traffic through Nautobot."""
+
+        databases = ("default", "job_logs")
+
+        def setUp(self) -> None:
+            super().setUp()
+            self.setUpNautobot(client=False, populate_status=True)
+            self.add_permissions(
+                "nautobot_intent_catalog.view_desirednode",
+                "nautobot_intent_catalog.change_desirednode",
+                "dcim.view_device",
+            )
+            self.token = Token.objects.create(user=self.user)
+
+            # The existing real-ORM fixture owns the metadata bootstrap. It creates
+            # only test-database rows and lets the candidate be a genuine Device.
+            from jobs.seed_home_cluster import SeedHomeCluster
+
+            seed = SeedHomeCluster()
+            seed.run("seed/home_cluster.yaml", dry_run=False, update_existing=True)
+            from nautobot.dcim.models import DeviceType, Location
+            from nautobot.extras.models import Role, Status
+
+            self.node = DesiredNode.objects.create(
+                name="p3-http-node",
+                slug="p3-http-node",
+                node_type="device",
+                lifecycle="active",
+                accepted_actual_types=["device"],
+            )
+            device_fields = {
+                "device_type": DeviceType.objects.get(model="Ubuntu PC"),
+                "role": Role.objects.get(name="workstation"),
+                "location": Location.objects.get(name="Home"),
+                "status": Status.objects.get(name="Active"),
+            }
+            self.device = Device.objects.create(
+                name=self.node.name,
+                **device_fields,
+            )
+            self.other_device = Device.objects.create(name="p3-http-other-device", **device_fields)
+
+        def _client(
+            self,
+            traffic: list[tuple[str, str, int]] | None = None,
+            after_patch=None,
+        ) -> NautobotClient:
+            client = NautobotClient(self.live_server_url, self.token.key)
+            if traffic is not None:
+                client._client.event_hooks["response"].append(
+                    lambda response: traffic.append((response.request.method, response.request.url.path, response.status_code))
+                )
+            if after_patch is not None:
+                real_rest_patch = client.rest_patch
+
+                def rest_patch(path, payload):
+                    response = real_rest_patch(path, payload)
+                    after_patch()
+                    return response
+
+                client.rest_patch = rest_patch
+            return client
+
+        def _plan(self):
+            with self._client() as client:
+                # Do the two production GraphQL source reads directly. The
+                # dump scanner is intentionally outside this ledger-only proof.
+                snapshot = SourceSnapshot(
+                    desired=fetch_desired_snapshot(client),
+                    actual=fetch_actual_snapshot(client),
+                    fetched_at=datetime.now(timezone.utc),
+                )
+            drift = compute_drift(snapshot, DriftContext(generated_at="2026-07-27T00:00:00+00:00"))
+            plan = build_plan(
+                snapshot=snapshot,
+                diffs=[diff for target in drift.targets for diff in target.diffs],
+                scope=PlanScope(kind="host", host_slug=self.node.slug),
+                drift_generated_at="2026-07-27T00:00:00+00:00",
+                profile_reconciliation={},
+            )
+            return snapshot, drift, plan
+
+        def _link_action(self):
+            _snapshot, drift, plan = self._plan()
+            node_target = next(target for target in drift.targets if target.target.id == str(self.node.pk))
+            self.assertIn("actual_node_not_linked", [diff.code for diff in node_target.diffs])
+            [action] = [item for item in plan.actions if item.reconciler_id == "link_actual_node"]
+            return action
+
+        def test_real_graphql_patch_graphql_link_and_fresh_no_repeat(self) -> None:
+            action = self._link_action()
+            self.assertEqual(action.reconciler_id, "link_actual_node")
+            self.assertEqual(action.targets[0].id, str(self.node.pk))
+            self.assertEqual(action.parameters["candidate"]["id"], str(self.device.pk))
+
+            traffic: list[tuple[str, str, int]] = []
+            with self._client(traffic) as client:
+                result = execute_link_actual_node(client, action)
+            self.assertEqual(result.candidate_id, str(self.device.pk))
+            self.assertEqual(
+                traffic,
+                [
+                    ("POST", "/api/graphql/", 200),
+                    ("PATCH", f"/api/plugins/intent-catalog/nodes/{self.node.pk}/", 200),
+                    ("POST", "/api/graphql/", 200),
+                ],
+            )
+
+            _fresh_snapshot, fresh_drift, fresh_plan = self._plan()
+            fresh_target = next(target for target in fresh_drift.targets if target.target.id == str(self.node.pk))
+            self.assertNotIn("actual_node_not_linked", [diff.code for diff in fresh_target.diffs])
+            self.assertFalse([action for action in fresh_plan.actions if action.reconciler_id == "link_actual_node"])
+
+        def test_reset_after_real_patch_fails_closed_and_fresh_plan_repeats_action(self) -> None:
+            action = self._link_action()
+
+            def reset():
+                DesiredNode.objects.filter(pk=self.node.pk).update(
+                    realized_device=None,
+                    realized_device_source=None,
+                )
+
+            with self._client(after_patch=reset) as client:
+                with self.assertRaises(LedgerActionError) as caught:
+                    execute_link_actual_node(client, action)
+
+            self.assertEqual(caught.exception.code, "node_link_not_confirmed")
+            self.assertTrue(caught.exception.mutated)
+            _snapshot, fresh_drift, fresh_plan = self._plan()
+            fresh_target = next(target for target in fresh_drift.targets if target.target.id == str(self.node.pk))
+            self.assertIn("actual_node_not_linked", [diff.code for diff in fresh_target.diffs])
+            self.assertEqual([item.reconciler_id for item in fresh_plan.actions], ["link_actual_node"])
+
+        def test_source_override_after_real_patch_preserves_mutation_evidence(self) -> None:
+            action = self._link_action()
+
+            def override():
+                DesiredNode.objects.filter(pk=self.node.pk).update(realized_device_source="override")
+
+            with self._client(after_patch=override) as client:
+                with self.assertRaises(LedgerActionError) as caught:
+                    execute_link_actual_node(client, action)
+
+            self.assertEqual(caught.exception.code, "node_link_source_not_confirmed")
+            self.assertTrue(caught.exception.mutated)
+
+        def test_different_candidate_or_deleted_node_after_patch_fails_truthfully(self) -> None:
+            for case_id, mutation, expected_code in (
+                (
+                    "different_candidate",
+                    lambda: DesiredNode.objects.filter(pk=self.node.pk).update(
+                        realized_device=self.other_device,
+                        realized_device_source="derived",
+                    ),
+                    "node_link_not_confirmed",
+                ),
+                (
+                    "node_disappears",
+                    lambda: DesiredNode.objects.filter(pk=self.node.pk).delete(),
+                    "node_fetch_failed",
+                ),
+            ):
+                with self.subTest(case_id=case_id):
+                    # Each branch owns a fresh isolated test row because the
+                    # delete case intentionally removes its row.
+                    if case_id != "different_candidate":
+                        self.node = DesiredNode.objects.create(
+                            name="p3-http-node-delete",
+                            slug="p3-http-node-delete",
+                            node_type="device",
+                            lifecycle="active",
+                            accepted_actual_types=["device"],
+                        )
+                        self.device.name = self.node.name
+                        self.device.save()
+                    action = self._link_action()
+                    with self._client(after_patch=mutation) as client:
+                        with self.assertRaises(LedgerActionError) as caught:
+                            execute_link_actual_node(client, action)
+                    self.assertEqual(caught.exception.code, expected_code)
+                    self.assertTrue(caught.exception.mutated)
+
+        def test_prelinked_or_partial_row_is_never_replaced(self) -> None:
+            action = self._link_action()
+            self.node.realized_device = self.device
+            self.node.realized_device_source = "override"
+            self.node.save()
+            before = (self.node.realized_device_id, self.node.realized_device_source)
+
+            with self._client() as client:
+                with self.assertRaises(LedgerActionError) as caught:
+                    execute_link_actual_node(client, action)
+            self.assertEqual(caught.exception.code, "node_already_linked")
+            self.assertFalse(caught.exception.mutated)
+            self.node.refresh_from_db()
+            self.assertEqual((self.node.realized_device_id, self.node.realized_device_source), before)
+
+        def test_absent_or_denied_prepatch_request_has_no_mutation(self) -> None:
+            action = self._link_action()
+            absent = action.model_copy(
+                update={"targets": [action.targets[0].model_copy(update={"id": "00000000-0000-0000-0000-000000000000"})]}
+            )
+            with self._client() as client:
+                with self.assertRaises(LedgerActionError) as absent_error:
+                    execute_link_actual_node(client, absent)
+            self.assertEqual(absent_error.exception.code, "node_fetch_failed")
+            self.assertFalse(absent_error.exception.mutated)
+
+            with NautobotClient(self.live_server_url, None) as denied_client:
+                with self.assertRaises(LedgerActionError) as denied_error:
+                    execute_link_actual_node(denied_client, action)
+            self.assertEqual(denied_error.exception.code, "node_fetch_failed")
+            self.assertFalse(denied_error.exception.mutated)
+            self.node.refresh_from_db()
+            self.assertIsNone(self.node.realized_device_id)
+            self.assertIsNone(self.node.realized_device_source)
