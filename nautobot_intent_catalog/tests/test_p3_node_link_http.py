@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Thread
 try:
     from django.test import LiveServerTestCase
@@ -20,7 +23,11 @@ try:
     from nautobot_intent_catalog.models import DesiredNode
     from nctl_core.drift.context import DriftContext
     from nctl_core.drift.engine import compute_drift
+    from nctl_core.artifacts import OperationArtifacts
+    from nctl_core.config import Config
+    from nctl_core.events import OperationLog
     from nctl_core.nautobot import NautobotClient
+    from nctl_core.reconcile.executor import _execute_action
     from nctl_core.reconcile.ledger import LedgerActionError, execute_link_actual_node
     from nctl_core.reconcile.model import PlanScope
     from nctl_core.reconcile.planner import build_plan
@@ -286,3 +293,38 @@ if HAS_RUNTIME:
             self.assertEqual(calls, [("POST", "/api/graphql/")])
             self.node.refresh_from_db()
             self.assertIsNone(self.node.realized_device_id)
+
+        def test_real_http_post_patch_failure_is_retained_by_executor_evidence(self) -> None:
+            snapshot, _drift, _plan = self._plan()
+            action = self._link_action()
+            with TemporaryDirectory(prefix="p3-node-link-events-") as directory:
+                root = Path(directory)
+                cfg = Config.model_validate(
+                    {
+                        "nautobot": {"url": self.live_server_url},
+                        "inventory": {"dumps_dir": str(root / "dumps")},
+                        "events": {"log_dir": str(root / "events")},
+                        "ansible": {"playbook_dir": str(root), "inventory": str(root / "inventory.yaml")},
+                        "source_path": root / "nctl.toml",
+                    }
+                )
+                op = OperationLog.start("reconcile", root / "events")
+                artifacts = OperationArtifacts.create(root / "events", op.operation_id)
+
+                def reset():
+                    DesiredNode.objects.filter(pk=self.node.pk).update(realized_device=None, realized_device_source=None)
+
+                with self._client(after_patch=reset) as client:
+                    executed = _execute_action(
+                        cfg, op, artifacts, 0, action, snapshot, client,
+                        lambda: datetime.now(timezone.utc), None, None, generated_at="2026-07-27T00:00:00+00:00",
+                    )
+
+                self.assertFalse(executed.result.success)
+                self.assertTrue(executed.result.mutated)
+                self.assertIn("node_link_not_confirmed", executed.result.error or "")
+                events = [json.loads(line) for line in op.path.read_text().splitlines()]
+                completed = [event for event in events if event["event"] == "action_completed"]
+                self.assertEqual(len(completed), 1)
+                self.assertFalse(completed[0]["data"]["success"])
+                self.assertTrue(completed[0]["data"]["mutated"])
