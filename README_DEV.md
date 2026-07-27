@@ -44,6 +44,8 @@ comparators live and are tested in nctl; do not reintroduce those processing rul
 
 The local suite does not load Django/Nautobot. Model migrations, GraphQL registration, Job discovery,
 and UI views must also be verified in the running Nautobot environment after deployment.
+The repository [test strategy command matrix](../README_DEV.md#test-strategy-command-matrix) is the
+authoritative list of runtime, clean-database, and conformance gates.
 
 ## Nautobot Verification
 
