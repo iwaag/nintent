@@ -3,21 +3,36 @@ from __future__ import annotations
 import unittest
 
 from nautobot_intent_catalog.compute_contract import (
+    COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS,
+    COMPUTE_PRIMARY_ENDPOINT_MISSING,
     ComputeContractError,
+    endpoint_has_usable_ip,
+    endpoint_satisfies_compute_address_contract,
     effective_lifecycle,
     effective_single_source_value,
     effective_value,
     is_actionable_lifecycle,
     normalize_mac_address,
+    link_source_pairing_is_valid,
+    select_compute_primary_endpoint,
+    validate_compute_lifecycle,
     validate_config_schema_version,
+    validate_instance_kind,
+    validate_link_source,
     validate_instance_config,
     validate_memory_mb,
     validate_platform_config,
+    validate_power_state,
     validate_provider_type,
     validate_root_disk_gb,
     validate_vcpus,
     validate_vmid,
 )
+
+
+class Endpoint:
+    def __init__(self, **attributes) -> None:
+        self.__dict__.update(attributes)
 
 
 class ProviderTypeTests(unittest.TestCase):
@@ -337,6 +352,77 @@ class EffectiveValueTests(unittest.TestCase):
         self.assertEqual(
             effective_single_source_value(None),
             {"value": None, "provenance": "unresolved"},
+        )
+
+
+class NewlyOwnedVocabularyTests(unittest.TestCase):
+    def test_lifecycle_validator_and_tuple(self) -> None:
+        self.assertEqual(validate_compute_lifecycle("active"), "active")
+        with self.assertRaises(ComputeContractError) as ctx:
+            validate_compute_lifecycle("enabled")
+        self.assertEqual(ctx.exception.code, "invalid_lifecycle")
+
+    def test_instance_kind_validator(self) -> None:
+        self.assertEqual(validate_instance_kind("container"), "container")
+        with self.assertRaises(ComputeContractError) as ctx:
+            validate_instance_kind("hypervisor")
+        self.assertEqual(ctx.exception.code, "invalid_instance_kind")
+
+    def test_power_state_validator(self) -> None:
+        self.assertEqual(validate_power_state("running"), "running")
+        with self.assertRaises(ComputeContractError) as ctx:
+            validate_power_state("paused")
+        self.assertEqual(ctx.exception.code, "invalid_power_state")
+
+    def test_link_source_pairing(self) -> None:
+        self.assertEqual(validate_link_source("derived", path="realized_vm_source"), "derived")
+        with self.assertRaises(ComputeContractError) as ctx:
+            validate_link_source("manual", path="realized_vm_source")
+        self.assertEqual(ctx.exception.code, "invalid_source")
+        self.assertTrue(link_source_pairing_is_valid(True, "derived"))
+        self.assertTrue(link_source_pairing_is_valid(False, None))
+        self.assertFalse(link_source_pairing_is_valid(True, None))
+        self.assertFalse(link_source_pairing_is_valid(False, "override"))
+
+
+class PrimaryEndpointTests(unittest.TestCase):
+    def _endpoint(self, **overrides):
+        attributes = {
+            "endpoint_type": "primary",
+            "mac_address": "bc:24:11:23:dc:b7",
+            "mdns_name": "node.local",
+            "ip_policy": "static",
+            "ip_address": "192.0.2.10/24",
+            "dns_name": None,
+            "generate_dnsmasq": False,
+        }
+        attributes.update(overrides)
+        return Endpoint(**attributes)
+
+    def test_usable_ip_and_address_contract(self) -> None:
+        self.assertTrue(endpoint_has_usable_ip(self._endpoint()))
+        self.assertTrue(endpoint_satisfies_compute_address_contract(self._endpoint()))
+        self.assertFalse(endpoint_has_usable_ip(self._endpoint(ip_address="not-an-ip")))
+        self.assertFalse(endpoint_satisfies_compute_address_contract(self._endpoint(ip_policy="external")))
+        self.assertTrue(
+            endpoint_satisfies_compute_address_contract(
+                self._endpoint(
+                    ip_policy="dhcp_reserved", dns_name="node", generate_dnsmasq=True
+                )
+            )
+        )
+
+    def test_primary_endpoint_outcomes(self) -> None:
+        endpoint = self._endpoint()
+        self.assertEqual(select_compute_primary_endpoint([]), (None, COMPUTE_PRIMARY_ENDPOINT_MISSING))
+        self.assertEqual(select_compute_primary_endpoint([endpoint]), (endpoint, None))
+        self.assertEqual(
+            select_compute_primary_endpoint([endpoint, self._endpoint()]),
+            (None, COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS),
+        )
+        self.assertEqual(
+            select_compute_primary_endpoint([self._endpoint(mdns_name="")]),
+            (None, COMPUTE_PRIMARY_ENDPOINT_MISSING),
         )
 
 

@@ -7,6 +7,7 @@ normalization, effective-lifecycle, and effective-default implementation.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from typing import Any
 
@@ -28,6 +29,17 @@ LIFECYCLE_APPROVED = "approved"
 LIFECYCLE_ACTIVE = "active"
 LIFECYCLE_DEPRECATED = "deprecated"
 LIFECYCLE_RETIRED = "retired"
+LIFECYCLE_CHOICES = (
+    LIFECYCLE_PLANNED,
+    LIFECYCLE_APPROVED,
+    LIFECYCLE_ACTIVE,
+    LIFECYCLE_DEPRECATED,
+    LIFECYCLE_RETIRED,
+)
+
+LINK_SOURCE_DERIVED = "derived"
+LINK_SOURCE_OVERRIDE = "override"
+LINK_SOURCE_CHOICES = (LINK_SOURCE_DERIVED, LINK_SOURCE_OVERRIDE)
 
 VCPUS_MIN = 1
 VCPUS_MAX = 8192
@@ -68,6 +80,44 @@ def validate_provider_type(value: Any, *, path: str = "provider_type") -> str:
             path=path,
         )
     return value
+
+
+def validate_compute_lifecycle(value: Any, *, path: str = "lifecycle") -> str:
+    if value not in LIFECYCLE_CHOICES:
+        raise ComputeContractError(
+            "invalid_lifecycle", f"must be one of {', '.join(LIFECYCLE_CHOICES)}", path=path
+        )
+    return value
+
+
+def validate_instance_kind(value: Any, *, path: str = "instance_kind") -> str:
+    if value not in INSTANCE_KIND_CHOICES:
+        raise ComputeContractError(
+            "invalid_instance_kind", f"must be one of {', '.join(INSTANCE_KIND_CHOICES)}", path=path
+        )
+    return value
+
+
+def validate_power_state(value: Any, *, path: str = "desired_power_state") -> str:
+    if value not in POWER_STATE_CHOICES:
+        raise ComputeContractError(
+            "invalid_power_state", f"must be one of {', '.join(POWER_STATE_CHOICES)}", path=path
+        )
+    return value
+
+
+def validate_link_source(value: Any, *, path: str) -> str:
+    if value not in LINK_SOURCE_CHOICES:
+        raise ComputeContractError(
+            "invalid_source", f"must be one of {', '.join(LINK_SOURCE_CHOICES)}", path=path
+        )
+    return value
+
+
+def link_source_pairing_is_valid(link_present: bool, source: str | None) -> bool:
+    """Return whether a realized link and its source are either both set or both absent."""
+
+    return bool(link_present) == bool(source)
 
 
 def validate_config_schema_version(value: Any, *, path: str = "config_schema_version") -> str:
@@ -129,12 +179,7 @@ def validate_instance_config(value: Any, *, instance_kind: str, path: str = "con
     `container`, forbidden for `virtual_machine`.
     """
 
-    if instance_kind not in INSTANCE_KIND_CHOICES:
-        raise ComputeContractError(
-            "invalid_instance_kind",
-            f"must be one of {', '.join(INSTANCE_KIND_CHOICES)}",
-            path="instance_kind",
-        )
+    validate_instance_kind(instance_kind)
 
     obj = _require_json_object(value, path)
     unknown = set(obj) - _INSTANCE_CONFIG_KEYS
@@ -238,6 +283,55 @@ def normalize_mac_address(value: Any) -> str | None:
             "must be six hex octets separated consistently by ':' or '-'",
         )
     return ":".join(octet.lower() for octet in octets)
+
+
+def endpoint_has_usable_ip(endpoint: Any) -> bool:
+    """Return whether an endpoint exposes a parseable desired IP interface."""
+
+    value = getattr(endpoint, "ip_address", None)
+    if not value:
+        return False
+    try:
+        ipaddress.ip_interface(str(value))
+    except ValueError:
+        return False
+    return True
+
+
+def endpoint_satisfies_compute_address_contract(endpoint: Any) -> bool:
+    """Return whether a primary endpoint satisfies the first Proxmox address contract."""
+
+    if getattr(endpoint, "ip_policy", None) == "dhcp_reserved":
+        return (
+            endpoint_has_usable_ip(endpoint)
+            and bool(str(getattr(endpoint, "dns_name", "") or "").strip())
+            and bool(getattr(endpoint, "generate_dnsmasq", False))
+        )
+    if getattr(endpoint, "ip_policy", None) == "static":
+        return endpoint_has_usable_ip(endpoint)
+    return False
+
+
+COMPUTE_PRIMARY_ENDPOINT_MISSING = "compute_primary_endpoint_missing"
+COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS = "compute_primary_endpoint_ambiguous"
+
+
+def select_compute_primary_endpoint(node_endpoints: list[Any]) -> tuple[Any | None, str | None]:
+    """Select the sole primary endpoint that is ready for compute realization."""
+
+    candidates = [
+        endpoint
+        for endpoint in node_endpoints
+        if getattr(endpoint, "endpoint_type", None) == "primary"
+        and getattr(endpoint, "mac_address", None)
+        and str(getattr(endpoint, "mdns_name", "") or "").strip()
+        and endpoint_satisfies_compute_address_contract(endpoint)
+    ]
+    if len(candidates) == 0:
+        return None, COMPUTE_PRIMARY_ENDPOINT_MISSING
+    if len(candidates) > 1:
+        return None, COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS
+    return candidates[0], None
 
 
 def effective_lifecycle(node_lifecycle: str, platform_lifecycle: str) -> str:

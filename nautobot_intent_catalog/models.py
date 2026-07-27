@@ -2,43 +2,11 @@
 
 from __future__ import annotations
 
-import ipaddress
-
-def _endpoint_has_usable_ip(endpoint) -> bool:
-    value = getattr(endpoint, "ip_address", None)
-    if not value:
-        return False
-    try:
-        ipaddress.ip_interface(str(value))
-    except ValueError:
-        return False
-    return True
-
-
 def _endpoint_is_usable_local(endpoint) -> bool:
-    return _endpoint_has_usable_ip(endpoint) or any(
+    return endpoint_has_usable_ip(endpoint) or any(
         str(getattr(endpoint, field_name, "") or "").strip()
         for field_name in ("dns_name", "mdns_name")
     )
-
-
-def _endpoint_has_usable_address_contract(endpoint) -> bool:
-    """One primary DesiredEndpoint is create-ready when it satisfies the first Proxmox contract.
-
-    `dhcp_reserved` requires a parseable desired IP, a non-empty DNS name, and
-    `generate_dnsmasq=True`. `static` requires only a parseable desired IP. `external` never
-    satisfies this contract.
-    """
-
-    if endpoint.ip_policy == "dhcp_reserved":
-        return (
-            _endpoint_has_usable_ip(endpoint)
-            and bool(str(endpoint.dns_name or "").strip())
-            and bool(endpoint.generate_dnsmasq)
-        )
-    if endpoint.ip_policy == "static":
-        return _endpoint_has_usable_ip(endpoint)
-    return False
 
 
 try:
@@ -51,6 +19,8 @@ try:
 
     from .compute_contract import (
         CONFIG_SCHEMA_VERSION_V1,
+        COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS,
+        COMPUTE_PRIMARY_ENDPOINT_MISSING,
         ComputeContractError,
         INSTANCE_KIND_CONTAINER,
         INSTANCE_KIND_VIRTUAL_MACHINE,
@@ -65,8 +35,11 @@ try:
         VCPUS_MIN,
         effective_lifecycle,
         effective_value,
+        endpoint_has_usable_ip,
         is_actionable_lifecycle,
+        link_source_pairing_is_valid,
         normalize_mac_address,
+        select_compute_primary_endpoint,
         validate_config_schema_version,
         validate_instance_config,
         validate_memory_mb,
@@ -672,7 +645,7 @@ else:
             if self.control_node_id and self.control_node.lifecycle == DesiredNode.LIFECYCLE_RETIRED:
                 errors["control_node"] = "The control node must not be retired."
 
-            if bool(self.realized_cluster_id) != bool(self.realized_cluster_source):
+            if not link_source_pairing_is_valid(self.realized_cluster_id, self.realized_cluster_source):
                 errors["realized_cluster_source"] = (
                     "realized_cluster_source must be set exactly when realized_cluster is set."
                 )
@@ -719,18 +692,11 @@ else:
         if bridge["provenance"] == "unresolved":
             problems.append("effective bridge is unresolved")
 
-        candidates = [
-            endpoint
-            for endpoint in node.desired_endpoints.all()
-            if endpoint.endpoint_type == "primary"
-            and endpoint.mac_address
-            and str(endpoint.mdns_name or "").strip()
-            and _endpoint_has_usable_address_contract(endpoint)
-        ]
-        if len(candidates) == 0:
-            problems.append("compute_primary_endpoint_missing")
-        elif len(candidates) > 1:
-            problems.append("compute_primary_endpoint_ambiguous")
+        _endpoint, endpoint_problem = select_compute_primary_endpoint(list(node.desired_endpoints.all()))
+        if endpoint_problem == COMPUTE_PRIMARY_ENDPOINT_MISSING:
+            problems.append(COMPUTE_PRIMARY_ENDPOINT_MISSING)
+        elif endpoint_problem == COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS:
+            problems.append(COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS)
 
         if problems:
             raise ValidationError({"__all__": problems})
@@ -868,7 +834,7 @@ else:
             except ComputeContractError as exc:
                 errors["config"] = str(exc)
 
-            if bool(self.realized_vm_id) != bool(self.realized_vm_source):
+            if not link_source_pairing_is_valid(self.realized_vm_id, self.realized_vm_source):
                 errors["realized_vm_source"] = (
                     "realized_vm_source must be set exactly when realized_vm is set."
                 )
@@ -1101,7 +1067,7 @@ else:
                         errors[field_name] = "Selected endpoint must belong to the configured node."
 
             if self.connection_path == self.CONNECTION_TAILSCALE:
-                if not self.tailscale_endpoint_id or not _endpoint_has_usable_ip(self.tailscale_endpoint):
+                if not self.tailscale_endpoint_id or not endpoint_has_usable_ip(self.tailscale_endpoint):
                     errors["tailscale_endpoint"] = "Tailscale connection requires an endpoint with a valid IP address."
                 if self.local_endpoint_id:
                     errors["local_endpoint"] = "Tailscale connection forbids a local endpoint override."
