@@ -29,7 +29,9 @@ try:
     from nctl_core.config import Config
     from nctl_core.events import OperationLog
     from nctl_core.nautobot import NautobotClient
-    from nctl_core.reconcile.executor import _execute_action, run_reconcile
+    from nctl_core.reconcile.actions.contract import ActionContext
+    from nctl_core.reconcile.actions.dispatch import execute_action
+    from nctl_core.reconcile.executor import run_reconcile
     from nctl_core.reconcile.ledger import LedgerActionError, execute_link_actual_node
     from nctl_core.reconcile.model import PlanScope
     from nctl_core.reconcile.planner import build_plan
@@ -327,9 +329,13 @@ if HAS_RUNTIME:
                     DesiredNode.objects.filter(pk=self.node.pk).update(realized_device=None, realized_device_source=None)
 
                 with self._client(after_patch=reset) as client:
-                    executed = _execute_action(
-                        cfg, op, artifacts, 0, action, snapshot, client,
-                        lambda: datetime.now(timezone.utc), None, None, generated_at="2026-07-27T00:00:00+00:00",
+                    executed = execute_action(
+                        ActionContext(
+                            cfg=cfg, operation_log=op, artifacts=artifacts, round_index=0,
+                            snapshot=snapshot, client=client, now=lambda: datetime.now(timezone.utc),
+                            command_runner=None, ssh_probe=None, generated_at="2026-07-27T00:00:00+00:00",
+                        ),
+                        action,
                     )
 
                 self.assertFalse(executed.result.success)
