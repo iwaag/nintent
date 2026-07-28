@@ -6,6 +6,8 @@ from rest_framework import serializers
 from ..models import (
     AlignmentReview,
     BrainDumpDocument,
+    DesiredComputeInstance,
+    DesiredComputePlatform,
     DesiredNode,
 )
 
@@ -108,3 +110,48 @@ class DesiredNodeSerializer(NautobotModelSerializer):
                     {f"{relation_name}_source": f"Source must be set exactly when {relation_name} is set."}
                 )
         return attrs
+
+
+class _ComputeLinkSerializer(NautobotModelSerializer):
+    """Narrow ledger-link surface shared by the two compute rows."""
+
+    link_field = ""
+
+    def to_internal_value(self, data):
+        source_field = f"{self.link_field}_source"
+        _check_allowed_mutation_keys(data, {self.link_field, source_field}, f"{self.Meta.model.__name__} mutation")
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        source_field = f"{self.link_field}_source"
+        if self.link_field in attrs:
+            if attrs[self.link_field] is None:
+                attrs[source_field] = None
+            elif source_field not in attrs:
+                attrs[source_field] = "override"
+        relation = attrs.get(self.link_field, getattr(self.instance, self.link_field, None))
+        source = attrs.get(source_field, getattr(self.instance, source_field, None))
+        if bool(relation) != bool(source):
+            raise serializers.ValidationError({source_field: f"Source must be set exactly when {self.link_field} is set."})
+        return attrs
+
+
+class DesiredComputePlatformSerializer(_ComputeLinkSerializer):
+    link_field = "realized_cluster"
+    realized_cluster_source = serializers.ChoiceField(choices=("derived", "override"), required=False, allow_null=True)
+
+    class Meta:
+        model = DesiredComputePlatform
+        fields = ("id", "name", "slug", "provider_type", "lifecycle", "control_node", "config", "realized_cluster", "realized_cluster_source", "created", "last_updated")
+        read_only_fields = ("id", "name", "slug", "provider_type", "lifecycle", "control_node", "config", "created", "last_updated")
+
+
+class DesiredComputeInstanceSerializer(_ComputeLinkSerializer):
+    link_field = "realized_vm"
+    realized_vm_source = serializers.ChoiceField(choices=("derived", "override"), required=False, allow_null=True)
+
+    class Meta:
+        model = DesiredComputeInstance
+        fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm", "realized_vm_source", "created", "last_updated")
+        read_only_fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "created", "last_updated")

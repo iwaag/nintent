@@ -246,10 +246,12 @@ and writes the validated production inventory and companion report.
 ## REST API
 
 Canonical domain reads use Nautobot GraphQL (`query { desired_nodes ... }`).
-Nautobot's REST API is retained only for narrow mutation workflows on three collections:
+Nautobot's REST API is retained only for narrow mutation workflows on five collections:
 
 ```text
 GET, PATCH        /api/plugins/intent-catalog/nodes/<uuid>/
+GET, PATCH        /api/plugins/intent-catalog/compute-platforms/<uuid>/
+GET, PATCH        /api/plugins/intent-catalog/compute-instances/<uuid>/
 GET, POST         /api/plugins/intent-catalog/braindumps/
 GET, PATCH, DELETE /api/plugins/intent-catalog/braindumps/<uuid>/
 GET, POST         /api/plugins/intent-catalog/alignment-reviews/
@@ -257,7 +259,8 @@ GET, PATCH, DELETE /api/plugins/intent-catalog/alignment-reviews/<uuid>/
 ```
 
 - `nodes`: POST, PUT, DELETE, and bulk mutations return `405 Method Not Allowed`. Writable fields on detail PATCH are strictly limited to `lifecycle`, `realized_device`, and `realized_device_source`.
-- `services`, `endpoints`, `compute-platforms`, and `compute-instances` REST collections are deleted (`404 Not Found`). Domain reads for these models use GraphQL.
+- `compute-platforms` can PATCH only `realized_cluster` and `realized_cluster_source`; `compute-instances` can PATCH only `realized_vm` and `realized_vm_source`. They are the narrow, ordered ledger-link writer used by `nctl`; all other compute fields remain GraphQL-read-only.
+- `services` and `endpoints` REST collections are deleted (`404 Not Found`). Domain reads use GraphQL.
 - Unallowed, system, or read-only mutation keys return `400 Bad Request`. Standard Nautobot REST conventions apply: authenticate with `Authorization: Token <api-token>`.
 
 ## Braindump and Alignment Review

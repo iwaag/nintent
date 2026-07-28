@@ -70,8 +70,6 @@ class StaticAPIContractTests(unittest.TestCase):
         for name in [
             "DesiredServiceSerializer",
             "DesiredEndpointSerializer",
-            "DesiredComputePlatformSerializer",
-            "DesiredComputeInstanceSerializer",
         ]:
             with self.subTest(name=name):
                 self.assertFalse(
@@ -86,8 +84,6 @@ class StaticAPIContractTests(unittest.TestCase):
         for name in [
             "DesiredServiceViewSet",
             "DesiredEndpointViewSet",
-            "DesiredComputePlatformViewSet",
-            "DesiredComputeInstanceViewSet",
         ]:
             with self.subTest(name=name):
                 self.assertFalse(
@@ -119,10 +115,6 @@ class StaticAPIContractTests(unittest.TestCase):
             "plugins-api:nautobot_intent_catalog-api:desiredservice-detail",
             "plugins-api:nautobot_intent_catalog-api:desiredendpoint-list",
             "plugins-api:nautobot_intent_catalog-api:desiredendpoint-detail",
-            "plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-list",
-            "plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-detail",
-            "plugins-api:nautobot_intent_catalog-api:desiredcomputeinstance-list",
-            "plugins-api:nautobot_intent_catalog-api:desiredcomputeinstance-detail",
         ]
         for name in removed_names:
             with self.subTest(name=name):
@@ -140,6 +132,8 @@ class StaticAPIContractTests(unittest.TestCase):
             "plugins-api:nautobot_intent_catalog-api:desirednode-list",
             "plugins-api:nautobot_intent_catalog-api:braindumpdocument-list",
             "plugins-api:nautobot_intent_catalog-api:alignmentreview-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeplatform-list",
+            "plugins-api:nautobot_intent_catalog-api:desiredcomputeinstance-list",
         ]
         for name in retained_list_names:
             with self.subTest(name=name):
@@ -170,7 +164,7 @@ if HAS_DJANGO:
             )
 
         def test_removed_rest_collections_return_404(self):
-            for endpoint in ["services", "endpoints", "compute-platforms", "compute-instances"]:
+            for endpoint in ["services", "endpoints"]:
                 with self.subTest(endpoint=endpoint):
                     list_url = f"/api/plugins/intent-catalog/{endpoint}/"
                     detail_url = f"/api/plugins/intent-catalog/{endpoint}/00000000-0000-0000-0000-000000000000/"

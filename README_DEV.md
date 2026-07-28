@@ -128,11 +128,11 @@ direct assumptions such as `IPAddress.address` through evaluation logic.
 
 ## REST API
 
-`DesiredNode`, `BrainDumpDocument`, and `AlignmentReview` are the only three retained REST collections today. All other REST collections (`DesiredService`, `DesiredEndpoint`, `DesiredComputePlatform`, `DesiredComputeInstance`) have been removed because no current non-UI writer needs them. The implementation lives under `nautobot_intent_catalog/api/`:
+`DesiredNode`, `DesiredComputePlatform`, `DesiredComputeInstance`, `BrainDumpDocument`, and `AlignmentReview` are the five retained REST collections. The compute collections are the Phase 2 narrow writer for realization links only; `DesiredService` and `DesiredEndpoint` REST surfaces remain removed. The implementation lives under `nautobot_intent_catalog/api/`:
 
-- `api/serializers.py`: `DesiredNodeSerializer`, `BrainDumpDocumentSerializer`, and `AlignmentReviewSerializer` are explicit-field serializers (no serializer uses `fields = "__all__"`). `DesiredNodeSerializer` restricts writable fields strictly to `lifecycle`, `realized_device`, and `realized_device_source`.
-- `api/views.py`: `DesiredNodeViewSet`, `BrainDumpDocumentViewSet`, and `AlignmentReviewViewSet`. `DesiredNodeViewSet` allows only incidental `GET` (list/detail) and `PATCH` (detail update for its owned mutation fields); `POST`, `PUT`, `DELETE`, list `PATCH`, and list `DELETE` return `405 Method Not Allowed`.
-- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `braindumps`, and `alignment-reviews`. Nautobot auto-discovers this via `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in `nautobot.extras.plugins.__init__`.
+- `api/serializers.py`: all serializers use explicit fields (never `fields = "__all__"`). The compute serializers permit only the respective relation/source pair and enforce that the source exists exactly with the relation.
+- `api/views.py`: compute link ViewSets allow only incidental `GET` and detail `PATCH`; `POST`, `PUT`, `DELETE`, list `PATCH`, and list `DELETE` return `405 Method Not Allowed`.
+- `api/urls.py`: an `OrderedDefaultRouter` registering `nodes`, `compute-platforms`, `compute-instances`, `braindumps`, and `alignment-reviews`. Nautobot auto-discovers this via `import_string_optional(f"{app_module}.api.urls.urlpatterns")` in `nautobot.extras.plugins.__init__`.
 
 Unlike `models.py`/`filters.py`, the `api/` package does not need the `try/except ImportError` guard for Nautobot-less local unit tests: Nautobot only imports `api/urls.py` when the App is loaded inside a real Nautobot process, so a plain top-level `from nautobot.apps.api import ...` is fine.
 
@@ -142,6 +142,8 @@ There is no local (Django-free) test coverage for the API layer since it only ex
 
 ```bash
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/nodes/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/compute-platforms/
+curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/compute-instances/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/braindumps/
 curl -H "Authorization: Token <api-token>" http://localhost:8000/api/plugins/intent-catalog/alignment-reviews/
 ```

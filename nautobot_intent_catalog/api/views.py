@@ -9,16 +9,22 @@ from ..filters import (
     AlignmentReviewFilterSet,
     BrainDumpDocumentFilterSet,
     DesiredNodeFilterSet,
+    DesiredComputeInstanceFilterSet,
+    DesiredComputePlatformFilterSet,
 )
 from ..models import (
     AlignmentReview,
     BrainDumpDocument,
     DesiredNode,
+    DesiredComputeInstance,
+    DesiredComputePlatform,
 )
 from .serializers import (
     AlignmentReviewSerializer,
     BrainDumpDocumentSerializer,
     DesiredNodeSerializer,
+    DesiredComputeInstanceSerializer,
+    DesiredComputePlatformSerializer,
 )
 
 
@@ -101,3 +107,39 @@ class DesiredNodeViewSet(NautobotModelViewSet):
     @extend_schema(request=BulkOperationSerializer(many=True))
     def bulk_destroy(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+
+
+class _ComputeLinkViewSet(NautobotModelViewSet):
+    """GET/detail-PATCH only; compute creation is intentionally not a REST API."""
+
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+
+    def update(self, request, *args, **kwargs):
+        if not kwargs.get("partial", False):
+            return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+
+    def bulk_update(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+
+    @extend_schema(request=BulkOperationSerializer(many=True))
+    def bulk_destroy(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(["GET", "PATCH", "HEAD", "OPTIONS"])
+
+
+class DesiredComputePlatformViewSet(_ComputeLinkViewSet):
+    queryset = DesiredComputePlatform.objects.all()
+    serializer_class = DesiredComputePlatformSerializer
+    filterset_class = DesiredComputePlatformFilterSet
+
+
+class DesiredComputeInstanceViewSet(_ComputeLinkViewSet):
+    queryset = DesiredComputeInstance.objects.select_related("platform", "realized_vm")
+    serializer_class = DesiredComputeInstanceSerializer
+    filterset_class = DesiredComputeInstanceFilterSet

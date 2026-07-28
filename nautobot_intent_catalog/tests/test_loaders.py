@@ -1230,8 +1230,11 @@ class CanonicalFileIdentityCountTests(unittest.TestCase):
             sorted(r.slug for r in result.desired_ip_ranges),
             ["dhcp-reserved", "dhcp-unreserved", "network-infra"],
         )
-        self.assertEqual(result.desired_compute_platforms, [])
-        self.assertEqual(result.desired_compute_instances, [])
+        self.assertEqual([platform.slug for platform in result.desired_compute_platforms], ["aghub-pve"])
+        self.assertEqual(
+            [(instance.desired_node, instance.config.get("vmid")) for instance in result.desired_compute_instances],
+            [("agdnsmasq", 108)],
+        )
         self.assertEqual(len(result.desired_services), 6)
         self.assertEqual(len(result.desired_service_placements), 1)
         self.assertEqual(result.desired_node_operational_overrides, [])
