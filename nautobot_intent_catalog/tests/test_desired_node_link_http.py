@@ -534,7 +534,7 @@ if HAS_RUNTIME:
 
         def test_authorized_prose_writes_do_not_change_real_drift_or_plan(self) -> None:
             """Braindump/Review REST writes are intentionally outside the desired snapshot."""
-            from nctl_core.braindump import build_braindump_create, build_braindump_review
+            from nctl_core.braindump_render import build_braindump_create, build_braindump_review
 
             _snapshot, before_drift, before_plan = self._plan()
             before_codes = sorted(diff.code for target in before_drift.targets for diff in target.diffs)
