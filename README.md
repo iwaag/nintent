@@ -14,8 +14,8 @@ the nintent UI are read-only desired-state consumers.
 
 Use `nctl desired apply -f FILE` to preview an operator document and add
 `--yes` to commit it. `nctl lifecycle` and reconciliation ledger links use the
-same endpoint. nintent does not read `intent_sources.yaml`, and no App setting
-or environment variable points at a desired-state file.
+same endpoint. nintent does not read a Git-held desired-state file, and no App
+setting or environment variable points at one.
 
 Nautobot prerequisites, nodeutils ingest policy, Braindumps, Alignment
 Reviews, and the `Reconcile Desired IPAM Intent` Job remain separate domains.
