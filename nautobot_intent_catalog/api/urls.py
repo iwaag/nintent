@@ -1,5 +1,6 @@
 """URL patterns for the Nautobot Intent Catalog App REST API."""
 
+from django.urls import path
 from nautobot.apps.api import OrderedDefaultRouter
 
 from . import views
@@ -11,4 +12,6 @@ router.register("compute-instances", views.DesiredComputeInstanceViewSet)
 router.register("braindumps", views.BrainDumpDocumentViewSet)
 router.register("alignment-reviews", views.AlignmentReviewViewSet)
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("desired-state/batch/", views.DesiredStateBatchView.as_view(), name="desired-state-batch"),
+] + router.urls
