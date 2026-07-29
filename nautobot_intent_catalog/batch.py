@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from dataclasses import asdict
 from typing import Any
 
 
@@ -143,9 +142,11 @@ def plan_batch(document: dict[str, Any]) -> BatchResult:
                 result.operations.append(_planned(operation, "conflict" if missing else "create",
                                                 reason=f"missing required fields: {', '.join(missing)}" if missing else None))
             else:
-                changed = {name: {"old": getattr(row, f"{name}_id", getattr(row, name, None)), "new": value}
-                           for name, value in operation.values.items()
-                           if getattr(row, name, None) != value}
+                changed = {
+                    name: {"old": getattr(row, f"{name}_id", getattr(row, name, None)), "new": value}
+                    for name, value in operation.values.items()
+                    if _value_differs(row, name, value, models)
+                }
                 result.operations.append(_planned(operation, "update" if changed else "unchanged", changed=changed,
                                                 preserved=sorted(_FIELDS[operation.kind] - set(operation.values))))
         except Exception as exc:  # planner reports one bad operation without aborting peers
@@ -193,28 +194,6 @@ def apply_batch(document: dict[str, Any]) -> BatchResult:
     return result
 
 
-def document_from_load_result(load_result: Any, *, dry_run: bool) -> dict[str, Any]:
-    """Map legacy YAML roots to non-destructive upsert operations for the Job."""
-    roots = {
-        "intent_source": load_result.intent_sources,
-        "desired_node": load_result.desired_nodes,
-        "desired_ip_range": load_result.desired_ip_ranges,
-        "desired_endpoint": load_result.desired_endpoints,
-        "desired_compute_platform": load_result.desired_compute_platforms,
-        "desired_compute_instance": load_result.desired_compute_instances,
-        "desired_service": load_result.desired_services,
-        "desired_service_placement": load_result.desired_service_placements,
-        "desired_node_operational_override": load_result.desired_node_operational_overrides,
-    }
-    operations = []
-    for kind in KIND_ORDER:
-        for entry in roots.get(kind, []):
-            values = asdict(entry)
-            key = {name: values.pop(name) for name in _KEYS[kind]}
-            operations.append({"op": "upsert", "kind": kind, "key": key, "values": values})
-    return {"dry_run": dry_run, "operations": operations}
-
-
 def _planned(operation: Operation, action: str, *, changed: dict[str, Any] | None = None,
              preserved: list[str] | None = None, reason: str | None = None) -> dict[str, Any]:
     return {"index": operation.index, "op": operation.op, "kind": operation.kind, "identity": operation.key,
@@ -231,6 +210,14 @@ def _models() -> dict[str, Any]:
             "desired_node_operational_override": models.DesiredNodeOperationalOverride}
 
 
+_ACTUAL_REFERENCE_MODELS = {
+    "realized_device": ("nautobot.dcim.models", "Device"),
+    "realized_ip_address": ("nautobot.ipam.models", "IPAddress"),
+    "realized_cluster": ("nautobot.virtualization.models", "Cluster"),
+    "realized_vm": ("nautobot.virtualization.models", "VirtualMachine"),
+}
+
+
 _REFERENCE_KIND = {"desired_node": "desired_node", "control_node": "desired_node", "platform": "desired_compute_platform",
                    "intent_source": "intent_source", "source_service": "desired_service", "resolved_service": "desired_service",
                    "desired_service": "desired_service", "desired_endpoint": "desired_endpoint",
@@ -244,6 +231,17 @@ def _find(model: Any, kind: str, key: dict[str, Any]) -> Any | None:
 def _orm_values(kind: str, values: dict[str, Any], models: dict[str, Any]) -> dict[str, Any]:
     resolved = {}
     for name, value in values.items():
+        if name in _ACTUAL_REFERENCE_MODELS:
+            if value is None:
+                resolved[name] = None
+                continue
+            module_name, model_name = _ACTUAL_REFERENCE_MODELS[name]
+            module = __import__(module_name, fromlist=[model_name])
+            target = getattr(module, model_name).objects.filter(pk=value).first()
+            if target is None:
+                raise BatchValidationError(f"unresolved {name} reference: {value!r}")
+            resolved[name] = target
+            continue
         if name not in _REFERENCE_KIND or value is None:
             resolved[name] = value
             continue
@@ -253,6 +251,21 @@ def _orm_values(kind: str, values: dict[str, Any], models: dict[str, Any]) -> di
             raise BatchValidationError(f"unresolved {name} reference: {value!r}")
         resolved[name] = target
     return resolved
+
+
+def _value_differs(row: Any, name: str, value: Any, models: dict[str, Any]) -> bool:
+    """Compare relationship inputs by primary key, never model-object identity."""
+    if name in _ACTUAL_REFERENCE_MODELS:
+        if value is None:
+            return getattr(row, f"{name}_id") is not None
+        resolved = _orm_values("", {name: value}, models)[name]
+        return str(getattr(row, f"{name}_id")) != str(resolved.pk)
+    if name in _REFERENCE_KIND and value is not None:
+        target_kind = _REFERENCE_KIND[name]
+        target = _find(models[target_kind], target_kind, value if isinstance(value, dict) else {"slug": value})
+        if target is not None:
+            return getattr(row, f"{name}_id") != target.pk
+    return getattr(row, name, None) != value
 
 
 _DELETE_BLOCKERS = {

@@ -7,10 +7,8 @@ Operator-facing ledger steps only. Desired-vs-actual drift and consumer renderin
 
 1. Install the App into Nautobot's Python environment and enable
    `nautobot_intent_catalog` in `PLUGINS`.
-2. Configure `PLUGINS_CONFIG["nautobot_intent_catalog"]["intent_sources_file"]`, or set
-   `NAUTOBOT_INTENT_SOURCES_FILE`.
-3. Run `nautobot-server migrate nautobot_intent_catalog`.
-4. Restart Nautobot and open `/plugins/intent-catalog/sources/`.
+2. Run `nautobot-server migrate nautobot_intent_catalog`.
+3. Restart Nautobot and open `/plugins/intent-catalog/sources/`.
 
 ## Key URLs
 
@@ -27,20 +25,18 @@ Operator-facing ledger steps only. Desired-vs-actual drift and consumer renderin
 The nintent UI is a read-only human inspection adapter. All add/edit/delete forms, Quick Host Add,
 and the Source YAML diagnostic page have been removed.
 
-Bulk structural intent is written via strict YAML import (`Import Intent Sources`). Lifecycle transitions and
-node linking are owned by `nctl`. Braindump and Alignment Review writes are owned by `nctl` over the narrow REST API.
+All structural desired state, lifecycle transitions, and realization links are
+written atomically through `POST /api/plugins/intent-catalog/desired-state/batch/`.
+`nctl desired apply` is the supported operator client; GraphQL and the UI are readers.
 
 ## Jobs retained in nintent
 
 | Job | Purpose |
 |---|---|
-| `Import Intent Sources` | Preview (default) or apply the strict `intent_sources.yaml` document. `apply=false` (default) performs zero database writes and always writes `intent-import-result.json`; `apply=true` commits one atomic transaction and refetches every planned row to confirm it. |
 | `Analyze Intent Sources` | Preview (default) or apply source-catalog analysis. `apply=false` (default) performs zero database writes and always writes `intent-analysis-result.json`; `apply=true` commits only analysis-owned fields (`IntentSource` status, `DesiredService` catalog fields, `DesiredDependency` rows) and preserves every operator-owned field. |
 | `Reconcile Desired IPAM Intent` | Dry-run/apply explicit-IP endpoints into `IPAddress` (`dhcp_reserved` always eligible; `static`/`external` need a matching self-observation). |
 
-Both Import and Analyze default to a safe, zero-write preview; pass `apply=true` explicitly to
-commit. Neither Job ever infers a delete/retire/disable from a YAML omission. `Preview Intent
-Source Analysis` was removed — Analyze's `apply=false` preview covers the same read-only
+`Preview Intent Source Analysis` was removed — Analyze's `apply=false` preview covers the same read-only
 information. The old Evaluate Jobs, production inventory export Job, profile sync Job,
 `IntentEvaluation`, and `DeploymentProfileProjection` were removed in 0.6.0.
 

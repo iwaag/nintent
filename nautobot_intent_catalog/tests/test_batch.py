@@ -1,8 +1,10 @@
 """Django-free contract tests for desired-state batch request decoding."""
 
+import sys
+import types
 import unittest
 
-from nautobot_intent_catalog.batch import BatchValidationError, apply_batch, decode_batch, plan_batch
+from nautobot_intent_catalog.batch import BatchValidationError, _orm_values, apply_batch, decode_batch, plan_batch
 
 
 class BatchDecodeTests(unittest.TestCase):
@@ -30,6 +32,31 @@ class BatchDecodeTests(unittest.TestCase):
             {"op": "delete", "kind": "intent_source", "key": {"slug": "a"}, "values": {}},
         ]}
         self.assertEqual(plan_batch(document).as_dict(), plan_batch(document).as_dict())
+
+    def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
+        class Query:
+            def __init__(self, value):
+                self.value = value
+            def first(self):
+                return self.value
+        class Manager:
+            def filter(self, *, pk):
+                return Query(types.SimpleNamespace(pk=pk) if pk == "known-device" else None)
+
+        dcim = types.ModuleType("nautobot.dcim.models")
+        dcim.Device = types.SimpleNamespace(objects=Manager())
+        prior = sys.modules.get("nautobot.dcim.models")
+        sys.modules["nautobot.dcim.models"] = dcim
+        try:
+            self.assertEqual(_orm_values("desired_node", {"realized_device": "known-device"}, {})["realized_device"].pk, "known-device")
+            self.assertIsNone(_orm_values("desired_node", {"realized_device": None}, {})["realized_device"])
+            with self.assertRaisesRegex(BatchValidationError, "unresolved realized_device reference"):
+                _orm_values("desired_node", {"realized_device": "unknown-device"}, {})
+        finally:
+            if prior is None:
+                del sys.modules["nautobot.dcim.models"]
+            else:
+                sys.modules["nautobot.dcim.models"] = prior
 
 
 try:

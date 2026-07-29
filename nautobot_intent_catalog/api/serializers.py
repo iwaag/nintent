@@ -3,13 +3,7 @@
 from nautobot.apps.api import NautobotModelSerializer
 from rest_framework import serializers
 
-from ..models import (
-    AlignmentReview,
-    BrainDumpDocument,
-    DesiredComputeInstance,
-    DesiredComputePlatform,
-    DesiredNode,
-)
+from ..models import AlignmentReview, BrainDumpDocument
 
 
 def _check_allowed_mutation_keys(data: dict, allowed_keys: set[str], operation: str = "mutation") -> None:
@@ -79,65 +73,3 @@ class AlignmentReviewSerializer(NautobotModelSerializer):
             allowed = {"summary"}
         _check_allowed_mutation_keys(data, allowed, "AlignmentReview mutation")
         return super().to_internal_value(data)
-
-
-class DesiredNodeSerializer(NautobotModelSerializer):
-    """Serializer for desired node intent.
-    
-    Only lifecycle and realized_device are writable.
-    All other fields are read-only.
-    """
-
-    class Meta:
-        model = DesiredNode
-        fields = (
-            "id",
-            "name",
-            "slug",
-            "node_type",
-            "lifecycle",
-            "role",
-            "realized_device",
-            "created",
-            "last_updated",
-        )
-        read_only_fields = ("id", "name", "slug", "node_type", "role", "created", "last_updated")
-
-    def to_internal_value(self, data):
-        allowed = {"lifecycle", "realized_device"}
-        _check_allowed_mutation_keys(data, allowed, "DesiredNode mutation")
-        return super().to_internal_value(data)
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        return attrs
-
-
-class _ComputeLinkSerializer(NautobotModelSerializer):
-    """Narrow ledger-link surface shared by the two compute rows."""
-
-    link_field = ""
-
-    def to_internal_value(self, data):
-        _check_allowed_mutation_keys(data, {self.link_field}, f"{self.Meta.model.__name__} mutation")
-        return super().to_internal_value(data)
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        return attrs
-
-
-class DesiredComputePlatformSerializer(_ComputeLinkSerializer):
-    link_field = "realized_cluster"
-    class Meta:
-        model = DesiredComputePlatform
-        fields = ("id", "name", "slug", "lifecycle", "control_node", "config", "realized_cluster", "created", "last_updated")
-        read_only_fields = ("id", "name", "slug", "lifecycle", "control_node", "config", "created", "last_updated")
-
-
-class DesiredComputeInstanceSerializer(_ComputeLinkSerializer):
-    link_field = "realized_vm"
-    class Meta:
-        model = DesiredComputeInstance
-        fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm", "created", "last_updated")
-        read_only_fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "created", "last_updated")

@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
-
-from .loaders import load_default_intent_sources, load_intent_sources
-from .batch import apply_batch, document_from_load_result, plan_batch
-
-IMPORT_SCHEMA_VERSION = "nintent.intent-import.v1"
-IMPORT_ARTIFACT_FILENAME = "intent-import-result.json"
+import importlib.util
 
 
 try:
-    from django.conf import settings
     from django.db import transaction
     from nautobot.ipam.models import IPAddress
     from nautobot.apps.jobs import BooleanVar, IntegerVar, Job, StringVar, register_jobs
@@ -31,68 +23,6 @@ except ImportError:  # pragma: no cover - Nautobot is not available in local uni
         raise
     jobs = ()
 else:
-
-    class ImportIntentSources(Job):
-        """Import intent source inputs from configured YAML into DB models.
-
-        Defaults to a zero-write preview (plan Section 5). The read-only plan
-        (`_plan_import`) and the atomic applier (`_apply_import`) are separate functions so
-        `apply=false` structurally cannot invoke a mutation method.
-        """
-
-        source_file = StringVar(
-            default="",
-            description="Optional path to intent_sources.yaml. Empty uses App configuration.",
-        )
-        apply = BooleanVar(
-            default=False,
-            description=(
-                "Commit the plan atomically. Preview (apply=false, the default) performs zero "
-                "database writes and always emits the same versioned artifact shape."
-            ),
-        )
-
-        class Meta:
-            name = "Import Intent Sources"
-            description = "Import intent source YAML rows into IntentSource records."
-            has_sensitive_variables = False
-
-        def run(self, source_file: str, apply: bool = False) -> None:
-            if source_file:
-                load_result = load_intent_sources(Path(source_file))
-            else:
-                load_result = load_default_intent_sources(_configured_source_file())
-
-            for error in load_result.errors:
-                self.logger.warning(error)
-
-            mode = "apply" if apply else "preview"
-
-            if load_result.errors:
-                artifact = {"schema_version": "nintent.desired-state-batch.v1", "operations": [],
-                            "errors": [{"message": error} for error in load_result.errors],
-                            "totals": {name: 0 for name in ("create", "update", "delete", "unchanged", "conflict")},
-                            "transaction": {"status": "blocked", "committed": False}}
-                self._write_artifact(artifact)
-                raise ValueError(
-                    "Intent source catalog could not be loaded; see Job logs and the artifact for details."
-                )
-
-            document = document_from_load_result(load_result, dry_run=not apply)
-            artifact = (plan_batch(document) if not apply else apply_batch(document)).as_dict()
-            self.logger.info("Intent source import %s summary: %s", mode, _json(artifact["totals"]))
-            self._write_artifact(artifact)
-            if artifact["transaction"]["status"] in {"blocked", "rolled_back"}:
-                raise ValueError("Intent source batch was not committed; see the result artifact.")
-            return
-
-
-        def _write_artifact(self, artifact: dict) -> None:
-            self.create_file(
-                IMPORT_ARTIFACT_FILENAME,
-                json.dumps(artifact, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
-            )
-
 
     class ReconcileDesiredIPAMIntent(Job):
         """Optionally create or link Nautobot IPAddress rows from explicit endpoint IP intent."""
@@ -207,17 +137,8 @@ else:
             )
             self.logger.info("Desired IPAM reconcile summary: %s", _json(counts))
 
-    jobs = (
-        ImportIntentSources,
-        ReconcileDesiredIPAMIntent,
-    )
+    jobs = (ReconcileDesiredIPAMIntent,)
     register_jobs(*jobs)
-
-
-def _configured_source_file():
-    plugins_config = getattr(settings, "PLUGINS_CONFIG", {}) or {}
-    app_config = plugins_config.get("nautobot_intent_catalog", {}) or {}
-    return app_config.get("intent_sources_file")
 
 
 def _json(value) -> str:

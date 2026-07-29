@@ -7,22 +7,8 @@ currently analyzes Git-backed intent sources and persists desired service,
 dependency, node, and endpoint records. Package, AppConfig, URL base, settings
 key, Job names, and YAML loader names use Intent Catalog terminology.
 
-The App should not depend on the physical checkout path of another repository.
-When a YAML input file is needed during local development, provide it explicitly:
-
-```python
-PLUGINS_CONFIG = {
-    "nautobot_intent_catalog": {
-        "intent_sources_file": "/absolute/path/to/nauto/seed/intent_sources.yaml",
-    },
-}
-```
-
-For simple local testing, the equivalent environment variable is:
-
-```bash
-export NAUTOBOT_INTENT_SOURCES_FILE=/absolute/path/to/nauto/seed/intent_sources.yaml
-```
+The App must not depend on another repository checkout or a desired-state file.
+Submit the Phase 0 batch document to the authenticated desired-state batch endpoint.
 
 No fallback to old plugin names, old setting keys, old import paths, or old URL
 aliases should be added. If an implementation change leaves obsolete database
