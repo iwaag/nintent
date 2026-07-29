@@ -49,3 +49,15 @@ else:
             result = apply_batch({**document, "dry_run": False}).as_dict()
             self.assertTrue(result["transaction"]["committed"])
             self.assertEqual(IntentSource.objects.filter(slug="batch-source").count(), before + 1)
+
+        def test_reference_resolves_from_an_earlier_batch_operation(self):
+            document = {"dry_run": False, "operations": [
+                {"op": "upsert", "kind": "desired_node", "key": {"slug": "batch-node"},
+                 "values": {"name": "batch-node", "node_type": "device", "lifecycle": "planned"}},
+                {"op": "upsert", "kind": "desired_endpoint",
+                 "key": {"desired_node": "batch-node", "name": "primary", "endpoint_type": "primary"},
+                 "values": {"ip_policy": "external"}},
+            ]}
+            result = apply_batch(document).as_dict()
+            self.assertTrue(result["transaction"]["committed"])
+            self.assertEqual(result["totals"]["create"], 2)

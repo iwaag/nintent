@@ -119,6 +119,7 @@ def plan_batch(document: dict[str, Any]) -> BatchResult:
     except (ImportError, AttributeError):
         models = None
     deleted_pks = _planned_delete_pks(operations, models) if models else {}
+    planned_keys = {(operation.kind, _identity_key(operation.key)) for operation in operations if operation.op == "upsert"}
     for operation in operations:
         if models is None:
             action, reason = ("unchanged", None) if operation.op == "delete" else ("conflict", "Django is not configured")
@@ -126,7 +127,13 @@ def plan_batch(document: dict[str, Any]) -> BatchResult:
             continue
         model = models[operation.kind]
         try:
-            row = _find(model, operation.kind, operation.key)
+            try:
+                row = _find(model, operation.kind, operation.key)
+            except BatchValidationError:
+                if _references_are_planned(operation, planned_keys):
+                    row = None
+                else:
+                    raise
             if operation.op == "delete":
                 blockers = _delete_blockers(operation.kind, row, deleted_pks) if row else []
                 result.operations.append(_planned(operation, "conflict" if blockers else ("delete" if row else "unchanged"),
@@ -285,3 +292,18 @@ def _delete_blockers(kind: str, row: Any, deleted_pks: dict[str, set[Any]]) -> l
         remaining = [item for item in rows if item.pk not in deleted_pks.get(related_kind, set())]
         blockers.extend(f"{related_kind}:{item.pk}" for item in remaining)
     return sorted(blockers)
+
+
+def _identity_key(key: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((name, repr(value)) for name, value in key.items()))
+
+
+def _references_are_planned(operation: Operation, planned_keys: set[tuple[str, tuple[tuple[str, str], ...]]]) -> bool:
+    for name, value in {**operation.key, **operation.values}.items():
+        target_kind = _REFERENCE_KIND.get(name)
+        if target_kind is None or value is None:
+            continue
+        reference = value if isinstance(value, dict) else {"slug": value}
+        if (target_kind, _identity_key(reference)) not in planned_keys:
+            return False
+    return True
