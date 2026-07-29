@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from nautobot.apps.api import NautobotModelViewSet
+from nautobot.core.api.serializers import BulkOperationSerializer
 
 from .. import models
 from ..batch import BatchValidationError, apply_batch, decode_batch, plan_batch
