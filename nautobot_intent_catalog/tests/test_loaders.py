@@ -1223,9 +1223,9 @@ class CanonicalFileIdentityCountTests(unittest.TestCase):
         )
         self.assertEqual(
             sorted(node.slug for node in result.desired_nodes),
-            ["agbach", "agdnsmasq", "aghub", "agpc", "agstudio"],
+            ["agbach", "agdnsmasq", "agfixture", "aghub", "agpc", "agstudio"],
         )
-        self.assertEqual(len(result.desired_endpoints), 5)
+        self.assertEqual(len(result.desired_endpoints), 6)
         self.assertEqual(
             sorted(r.slug for r in result.desired_ip_ranges),
             ["dhcp-reserved", "dhcp-unreserved", "network-infra"],
@@ -1233,7 +1233,7 @@ class CanonicalFileIdentityCountTests(unittest.TestCase):
         self.assertEqual([platform.slug for platform in result.desired_compute_platforms], ["aghub-pve"])
         self.assertEqual(
             [(instance.desired_node, instance.config.get("vmid")) for instance in result.desired_compute_instances],
-            [("agdnsmasq", 108)],
+            [("agdnsmasq", 108), ("agfixture", 109)],
         )
         self.assertEqual(len(result.desired_services), 6)
         self.assertEqual(len(result.desired_service_placements), 1)
