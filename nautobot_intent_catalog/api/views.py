@@ -1,6 +1,10 @@
 """REST API views for the Nautobot Intent Catalog App."""
 
+from django.db import transaction
 from django.http import HttpResponseNotAllowed
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from nautobot.apps.api import NautobotModelViewSet
 from nautobot.core.api.serializers import BulkOperationSerializer
@@ -22,6 +26,7 @@ from ..models import (
 from .serializers import (
     AlignmentReviewSerializer,
     BrainDumpDocumentSerializer,
+    BrainDumpSupersedeSerializer,
     DesiredNodeSerializer,
     DesiredComputeInstanceSerializer,
     DesiredComputePlatformSerializer,
@@ -35,6 +40,47 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
     serializer_class = BrainDumpDocumentSerializer
     filterset_class = BrainDumpDocumentFilterSet
     http_method_names = ["get", "post", "head", "options"]
+
+    @action(detail=False, methods=["post"], url_path="supersede")
+    def supersede(self, request, *args, **kwargs):
+        """Atomically create one active replacement and supersede exact active rows."""
+        serializer = BrainDumpSupersedeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        old_ids = values["old_ids"]
+
+        with transaction.atomic():
+            old_rows = list(
+                BrainDumpDocument.objects.select_for_update().filter(pk__in=old_ids)
+            )
+            found_ids = {row.pk for row in old_rows}
+            missing_ids = [str(old_id) for old_id in old_ids if old_id not in found_ids]
+            if missing_ids:
+                return Response(
+                    {"old_ids": [f"Unknown Braindump IDs: {', '.join(missing_ids)}."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            inactive_ids = [str(row.pk) for row in old_rows if row.status != BrainDumpDocument.STATUS_ACTIVE]
+            if inactive_ids:
+                return Response(
+                    {"old_ids": [f"Braindumps are not active: {', '.join(inactive_ids)}."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            replacement = BrainDumpDocument.objects.create(
+                title=values["title"], body=values["body"], authorship=values["authorship"]
+            )
+            BrainDumpDocument.objects.filter(pk__in=old_ids).update(
+                status=BrainDumpDocument.STATUS_SUPERSEDED
+            )
+
+        return Response(
+            {
+                "braindump": BrainDumpDocumentSerializer(replacement, context={"request": request}).data,
+                "superseded_ids": [str(old_id) for old_id in old_ids],
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class AlignmentReviewViewSet(NautobotModelViewSet):

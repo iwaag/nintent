@@ -299,6 +299,7 @@ else:
             fields = (
                 "title",
                 "authorship",
+                "status",
                 "last_updated",
                 "review",
             )

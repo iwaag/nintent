@@ -40,6 +40,10 @@ else:
             field = BrainDumpDocument._meta.get_field("authorship")
             self.assertFalse(field.has_default())
 
+        def test_status_defaults_to_active(self):
+            braindump = _make_braindump()
+            self.assertEqual(braindump.status, BrainDumpDocument.STATUS_ACTIVE)
+
         def test_unicode_and_multiline_round_trip(self):
             body = "Line one\nライン2\n混在 mixed English\n😀 emoji"
             braindump = _make_braindump(title="日本語タイトル mixed", body=body)
@@ -281,6 +285,38 @@ else:
             )
             self.braindumps_url = reverse("plugins-api:nautobot_intent_catalog-api:braindumpdocument-list")
             self.reviews_url = reverse("plugins-api:nautobot_intent_catalog-api:alignmentreview-list")
+            self.supersede_url = f"{self.braindumps_url}supersede/"
+
+        def test_supersede_creates_active_replacement_and_changes_exact_old_rows(self):
+            first = _make_braindump(title="Old one")
+            second = _make_braindump(title="Old two")
+            untouched = _make_braindump(title="Untouched")
+            response = self.client.post(
+                self.supersede_url,
+                {"old_ids": [str(first.pk), str(second.pk)], "title": "Replacement", "body": "new body", "authorship": "user_direct"},
+                format="json", **self.header,
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            replacement = BrainDumpDocument.objects.get(pk=response.data["braindump"]["id"])
+            self.assertEqual(replacement.status, BrainDumpDocument.STATUS_ACTIVE)
+            self.assertEqual(response.data["superseded_ids"], [str(first.pk), str(second.pk)])
+            first.refresh_from_db(); second.refresh_from_db(); untouched.refresh_from_db()
+            self.assertEqual(first.status, BrainDumpDocument.STATUS_SUPERSEDED)
+            self.assertEqual(second.status, BrainDumpDocument.STATUS_SUPERSEDED)
+            self.assertEqual(untouched.status, BrainDumpDocument.STATUS_ACTIVE)
+
+        def test_supersede_invalid_old_id_is_atomic(self):
+            original = _make_braindump()
+            before_count = BrainDumpDocument.objects.count()
+            response = self.client.post(
+                self.supersede_url,
+                {"old_ids": [str(original.pk), str(uuid.uuid4())], "title": "Replacement", "body": "new body", "authorship": "user_direct"},
+                format="json", **self.header,
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            original.refresh_from_db()
+            self.assertEqual(original.status, BrainDumpDocument.STATUS_ACTIVE)
+            self.assertEqual(BrainDumpDocument.objects.count(), before_count)
 
         def test_create_and_read_braindump_while_mutations_are_rejected(self):
             response = self.client.post(
@@ -421,6 +457,7 @@ else:
                 title
                 body
                 authorship
+                status
                 created
                 last_updated
                 alignment_review {
@@ -437,6 +474,7 @@ else:
             documents = {doc["title"]: doc for doc in response.data["data"]["braindump_documents"]}
 
             self.assertEqual(documents["Reviewed Braindump"]["body"], "Body one 日本語")
+            self.assertEqual(documents["Reviewed Braindump"]["status"], "ACTIVE")
             self.assertIsNotNone(documents["Reviewed Braindump"]["alignment_review"])
             self.assertEqual(documents["Reviewed Braindump"]["alignment_review"]["summary"], "Review one")
 

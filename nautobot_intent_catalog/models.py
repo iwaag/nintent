@@ -1184,9 +1184,17 @@ else:
             (AUTHORSHIP_AGENT_TRANSCRIBED, "Agent transcribed"),
         )
 
+        STATUS_ACTIVE = "active"
+        STATUS_SUPERSEDED = "superseded"
+        STATUS_CHOICES = (
+            (STATUS_ACTIVE, "Active"),
+            (STATUS_SUPERSEDED, "Superseded"),
+        )
+
         title = models.CharField(max_length=255)
         body = models.TextField()
         authorship = models.CharField(max_length=32, choices=AUTHORSHIP_CHOICES)
+        status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
 
         class Meta:
             ordering = ("-last_updated", "title")

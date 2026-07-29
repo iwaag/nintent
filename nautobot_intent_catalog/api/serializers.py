@@ -30,13 +30,35 @@ class BrainDumpDocumentSerializer(NautobotModelSerializer):
 
     class Meta:
         model = BrainDumpDocument
-        fields = ("id", "title", "body", "authorship", "created", "last_updated")
-        read_only_fields = ("id", "created", "last_updated")
+        fields = ("id", "title", "body", "authorship", "status", "created", "last_updated")
+        read_only_fields = ("id", "status", "created", "last_updated")
 
     def to_internal_value(self, data):
         allowed = {"title", "body", "authorship"}
         _check_allowed_mutation_keys(data, allowed, "BrainDumpDocument mutation")
         return super().to_internal_value(data)
+
+
+class BrainDumpSupersedeSerializer(serializers.Serializer):
+    """Request shape for the sole Braindump status transition."""
+
+    old_ids = serializers.ListField(
+        child=serializers.UUIDField(), allow_empty=False, write_only=True
+    )
+    title = serializers.CharField(max_length=255, trim_whitespace=False)
+    body = serializers.CharField(trim_whitespace=False)
+    authorship = serializers.ChoiceField(choices=BrainDumpDocument.AUTHORSHIP_CHOICES)
+
+    def validate_old_ids(self, value):
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Each old Braindump ID must be supplied once.")
+        return value
+
+    def validate(self, attrs):
+        for field_name in ("title", "body"):
+            if not attrs[field_name].strip():
+                raise serializers.ValidationError({field_name: "This field must not be blank."})
+        return attrs
 
 
 class AlignmentReviewSerializer(NautobotModelSerializer):

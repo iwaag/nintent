@@ -260,7 +260,7 @@ else:
 
         class Meta:
             model = BrainDumpDocument
-            fields = ("id", "title", "authorship")
+            fields = ("id", "title", "authorship", "status")
 
         def search(self, queryset, name, value):
             if not value.strip():
