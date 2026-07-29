@@ -257,14 +257,14 @@ if HAS_DJANGO:
             "detail": "intentsource",
             "model": _models.IntentSource,
             "factory": make_intent_source,
-            "label_field": "name",
+            "label_field": "slug",
         },
         {
             "list": "desiredservice_list",
             "detail": "desiredservice",
             "model": _models.DesiredService,
             "factory": make_desired_service,
-            "label_field": "display_name",
+            "label_field": "name",
         },
         {
             "list": "desireddependency_list",

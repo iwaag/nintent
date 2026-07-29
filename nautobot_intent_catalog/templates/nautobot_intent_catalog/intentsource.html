@@ -4,7 +4,7 @@
 <div class="container-fluid">
     <div class="row">
         <div class="col-md-12">
-            <h1>{{ object.name }}</h1>
+            <h1>{{ object.slug }}</h1>
 
             <div class="panel panel-default">
                 <div class="panel-heading">
@@ -12,58 +12,8 @@
                 </div>
                 <table class="table table-hover attr-table">
                     <tr>
-                        <th scope="row">Name</th>
-                        <td>{{ object.name }}</td>
-                    </tr>
-                    <tr>
                         <th scope="row">Slug</th>
                         <td><code>{{ object.slug }}</code></td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Source Type</th>
-                        <td>{{ object.get_source_type_display|default:object.source_type }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">URL</th>
-                        <td>
-                            {% if object.url %}
-                                <code>{{ object.url }}</code>
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Ref</th>
-                        <td>{{ object.ref|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Enabled</th>
-                        <td>{{ object.enabled|yesno:"Yes,No" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Owner</th>
-                        <td>{{ object.owner|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Last Import Status</th>
-                        <td>{{ object.last_import_status|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Last Imported At</th>
-                        <td>{{ object.last_imported_at|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Description</th>
-                        <td>{{ object.description|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Source Config</th>
-                        <td><pre>{{ object.source_config|default_if_none:"{}" }}</pre></td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Last Import Summary</th>
-                        <td><pre>{{ object.last_import_summary|default_if_none:"{}" }}</pre></td>
                     </tr>
                 </table>
             </div>

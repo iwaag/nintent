@@ -2,7 +2,7 @@
 
 import unittest
 
-from nautobot_intent_catalog.batch import BatchValidationError, decode_batch, plan_batch
+from nautobot_intent_catalog.batch import BatchValidationError, apply_batch, decode_batch, plan_batch
 
 
 class BatchDecodeTests(unittest.TestCase):

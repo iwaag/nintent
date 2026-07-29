@@ -91,7 +91,7 @@ else:
     class DesiredNodeListView(ObjectListView):
         """List desired node records."""
 
-        queryset = DesiredNode.objects.select_related("intent_source", "realized_device")
+        queryset = DesiredNode.objects.select_related("realized_device")
         filterset = DesiredNodeFilterSet
         table = DesiredNodeTable
 
@@ -100,7 +100,7 @@ else:
         """Show one desired node record."""
 
         queryset = DesiredNode.objects.select_related(
-            "intent_source", "realized_device"
+            "realized_device"
         ).prefetch_related("controlled_compute_platforms", "desired_compute_instance")
 
 

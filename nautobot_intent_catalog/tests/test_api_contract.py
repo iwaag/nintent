@@ -216,7 +216,7 @@ if HAS_DJANGO:
                 set(response.data.keys()),
                 {
                     "id", "name", "slug", "node_type", "lifecycle", "role",
-                    "realized_device", "realized_device_source", "created", "last_updated",
+                    "realized_device", "created", "last_updated",
                     # Universal Nautobot fields added by NautobotModelSerializer regardless of
                     # Meta.fields; not declared by DesiredNodeSerializer itself.
                     "display", "object_type", "notes_url", "custom_fields",
@@ -246,15 +246,6 @@ if HAS_DJANGO:
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
             node.refresh_from_db()
             self.assertEqual(node.lifecycle, "active")
-
-        def test_desired_node_patch_inconsistent_link_source_rejected_with_zero_write(self):
-            node = models.DesiredNode.objects.create(name="n5", slug="n5", lifecycle="active")
-            url = reverse("plugins-api:nautobot_intent_catalog-api:desirednode-detail", kwargs={"pk": node.pk})
-            response = self.client.patch(url, {"realized_device_source": "derived"}, format="json", **self.header)
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-            node.refresh_from_db()
-            self.assertIsNone(node.realized_device_id)
-            self.assertIsNone(node.realized_device_source)
 
         def test_desired_node_full_put_delete_and_bulk_patch_return_405(self):
             node = models.DesiredNode.objects.create(name="n6", slug="n6", lifecycle="active")
