@@ -35,6 +35,7 @@ from .import_plan import (
     unresolved_reference,
 )
 from .loaders import load_default_intent_sources, load_intent_sources
+from .batch import apply_batch, document_from_load_result, plan_batch
 from .intent_contract import require_unique_reference
 
 IMPORT_SCHEMA_VERSION = "nintent.intent-import.v1"
@@ -132,6 +133,14 @@ else:
                 raise ValueError(
                     "Intent source catalog could not be loaded; see Job logs and the artifact for details."
                 )
+
+            document = document_from_load_result(load_result, dry_run=not apply)
+            artifact = (plan_batch(document) if not apply else apply_batch(document)).as_dict()
+            self.logger.info("Intent source import %s summary: %s", mode, _json(artifact["totals"]))
+            self._write_artifact(artifact)
+            if artifact["transaction"]["status"] in {"blocked", "rolled_back"}:
+                raise ValueError("Intent source batch was not committed; see the result artifact.")
+            return
 
             planned_objects = _plan_import(load_result)
             blocked = any(obj.action == "conflict" for obj in planned_objects)
