@@ -29,28 +29,12 @@ from .serializers import (
 
 
 class BrainDumpDocumentViewSet(NautobotModelViewSet):
-    """Read/write API endpoint for Braindump documents.
-
-    Allowed methods: GET, POST, detail PATCH, detail DELETE.
-    Disallowed: PUT, bulk PATCH, bulk DELETE.
-    """
+    """Immutable Braindump API endpoint: read existing statements or create a new one."""
 
     queryset = BrainDumpDocument.objects.select_related("alignment_review")
     serializer_class = BrainDumpDocumentSerializer
     filterset_class = BrainDumpDocumentFilterSet
-    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-
-    def update(self, request, *args, **kwargs):
-        if not kwargs.get("partial", False):
-            return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
-        return super().update(request, *args, **kwargs)
-
-    def bulk_update(self, request, *args, **kwargs):
-        return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
-
-    @extend_schema(request=BulkOperationSerializer(many=True))
-    def bulk_destroy(self, request, *args, **kwargs):
-        return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+    http_method_names = ["get", "post", "head", "options"]
 
 
 class AlignmentReviewViewSet(NautobotModelViewSet):

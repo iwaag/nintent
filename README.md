@@ -259,7 +259,7 @@ GET, PATCH        /api/plugins/intent-catalog/nodes/<uuid>/
 GET, PATCH        /api/plugins/intent-catalog/compute-platforms/<uuid>/
 GET, PATCH        /api/plugins/intent-catalog/compute-instances/<uuid>/
 GET, POST         /api/plugins/intent-catalog/braindumps/
-GET, PATCH, DELETE /api/plugins/intent-catalog/braindumps/<uuid>/
+GET               /api/plugins/intent-catalog/braindumps/<uuid>/
 GET, POST         /api/plugins/intent-catalog/alignment-reviews/
 GET, PATCH, DELETE /api/plugins/intent-catalog/alignment-reviews/<uuid>/
 ```
@@ -278,11 +278,12 @@ together with current desired/actual state. See
 [devdocs/big/braindump/roadmap.md](../devdocs/big/braindump/roadmap.md) in the parent repository for
 the full design; this section documents only the nintent-side surface.
 
-- **UI entry**: the `Braindumps` navigation item lists, and lets a user create/edit/delete,
+- **UI entry**: the `Braindumps` navigation item provides read-only list and detail views for
   `BrainDumpDocument` rows. Each Braindump's detail page shows the user's text and the current
   Alignment Review (or "Unreviewed") in two clearly separate panels, so AI-derived text is never
   mistaken for the user's own words.
-- **REST**: ordinary `NautobotModelViewSet` CRUD at
+- **REST**: Braindumps allow only `GET` and `POST`; Alignment Reviews retain their ordinary CRUD
+  surface at
 
   ```text
   /api/plugins/intent-catalog/braindumps/
@@ -294,6 +295,9 @@ the full design; this section documents only the nintent-side surface.
   not a nested write; creating a second review for the same Braindump fails with the framework's
   normal uniqueness validation response, and replacing a review is an ordinary `PATCH`/`PUT` of the
   existing row.
+- **Correction workflow**: a Braindump is immutable once created. For a mistaken, incomplete, or
+  changed wish, create another Braindump; until supersession is implemented, both statements remain
+  visible and the agent must ask the user if their relationship is ambiguous.
 - **GraphQL** (read-only, framework-generated via `@extras_features("graphql")`): the canonical
   top-level query fields are `braindump_document(id)` / `braindump_documents(...)` and
   `alignment_review(id)` / `alignment_reviews(...)`. The canonical Braindump GraphQL query:

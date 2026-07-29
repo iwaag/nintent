@@ -142,7 +142,7 @@ else:
         reversed and exercised deleted Braindump/Alignment Review add/edit/delete routes. Phase 3
         deleted those routes/views/forms; this class now proves their absence and that the retained
         read-only pages cannot mutate, instead of exercising mutation UI that no longer exists.
-        REST CRUD coverage for the same models lives in `BrainDumpAPITests` below, unchanged.
+        REST immutability coverage for the same models lives in `BrainDumpAPITests` below.
         """
 
         user_permissions = (
@@ -265,7 +265,7 @@ else:
 
 
     class BrainDumpAPITests(APITestCase):
-        """REST CRUD, validation, and cascade coverage."""
+        """REST creation, reading, and immutability coverage."""
 
         def setUp(self):
             super().setUp()
@@ -282,7 +282,7 @@ else:
             self.braindumps_url = reverse("plugins-api:nautobot_intent_catalog-api:braindumpdocument-list")
             self.reviews_url = reverse("plugins-api:nautobot_intent_catalog-api:alignmentreview-list")
 
-        def test_create_read_list_update_delete_braindump(self):
+        def test_create_and_read_braindump_while_mutations_are_rejected(self):
             response = self.client.post(
                 self.braindumps_url,
                 {"title": "T", "body": "B", "authorship": "user_direct"},
@@ -290,16 +290,22 @@ else:
                 **self.header,
             )
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-            detail_url = f"{self.braindumps_url}{response.data['id']}/"
+            braindump_id = response.data["id"]
+            detail_url = f"{self.braindumps_url}{braindump_id}/"
 
             self.assertEqual(self.client.get(detail_url, **self.header).status_code, status.HTTP_200_OK)
             self.assertEqual(self.client.get(self.braindumps_url, **self.header).status_code, status.HTTP_200_OK)
 
-            response = self.client.patch(detail_url, {"body": "B2"}, format="json", **self.header)
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(response.data["body"], "B2")
-
-            self.assertEqual(self.client.delete(detail_url, **self.header).status_code, status.HTTP_204_NO_CONTENT)
+            for response in (
+                self.client.patch(detail_url, {"body": "B2"}, format="json", **self.header),
+                self.client.put(detail_url, {"title": "T", "body": "B", "authorship": "user_direct"}, format="json", **self.header),
+                self.client.delete(detail_url, **self.header),
+                self.client.patch(self.braindumps_url, [{}], format="json", **self.header),
+                self.client.delete(self.braindumps_url, **self.header),
+            ):
+                self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+            braindump = models.BrainDumpDocument.objects.get(pk=braindump_id)
+            self.assertEqual(braindump.body, "B")
 
         def test_create_without_authorship_fails(self):
             response = self.client.post(
