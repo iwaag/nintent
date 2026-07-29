@@ -304,7 +304,7 @@ else:
                 self.client.delete(self.braindumps_url, **self.header),
             ):
                 self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-            braindump = models.BrainDumpDocument.objects.get(pk=braindump_id)
+            braindump = BrainDumpDocument.objects.get(pk=braindump_id)
             self.assertEqual(braindump.body, "B")
 
         def test_create_without_authorship_fails(self):
@@ -370,17 +370,17 @@ else:
             review.refresh_from_db()
             self.assertEqual(review.summary, "v2")
 
-        def test_patch_preserves_omitted_fields_and_exact_accepted_text(self):
+        def test_patch_is_rejected_and_preserves_exact_text(self):
             body_text = "  padded body with a newline\nand Unicode 日本語  "
             braindump = _make_braindump(body=body_text)
             detail_url = f"{self.braindumps_url}{braindump.pk}/"
             response = self.client.patch(detail_url, {"title": "Renamed"}, format="json", **self.header)
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
             braindump.refresh_from_db()
-            self.assertEqual(braindump.title, "Renamed")
+            self.assertEqual(braindump.title, "Test Braindump")
             self.assertEqual(braindump.body, body_text)
 
-        def test_cascade_and_review_only_deletion_are_observable_through_the_api(self):
+        def test_review_deletion_preserves_an_immutable_braindump(self):
             braindump = _make_braindump()
             review = AlignmentReview.objects.create(braindump=braindump, summary="x")
 
@@ -393,9 +393,9 @@ else:
 
             braindump_detail = f"{self.braindumps_url}{braindump.pk}/"
             self.assertEqual(
-                self.client.delete(braindump_detail, **self.header).status_code, status.HTTP_204_NO_CONTENT
+                self.client.delete(braindump_detail, **self.header).status_code, status.HTTP_405_METHOD_NOT_ALLOWED
             )
-            self.assertEqual(self.client.get(braindump_detail, **self.header).status_code, status.HTTP_404_NOT_FOUND)
+            self.assertEqual(self.client.get(braindump_detail, **self.header).status_code, status.HTTP_200_OK)
 
 
     class BrainDumpGraphQLTests(APITestCase):
