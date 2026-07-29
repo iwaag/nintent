@@ -1,7 +1,5 @@
 """REST API views for the Nautobot Intent Catalog App."""
 
-import yaml
-
 from django.db import transaction
 from django.http import HttpResponseNotAllowed
 from rest_framework import status
@@ -39,6 +37,7 @@ from .serializers import (
     DesiredComputeInstanceSerializer,
     DesiredComputePlatformSerializer,
 )
+from .yaml_input import YAMLDocumentError, load_yaml_document
 
 
 class _YAMLParser(BaseParser):
@@ -46,12 +45,9 @@ class _YAMLParser(BaseParser):
 
     def parse(self, stream, media_type=None, parser_context=None):
         try:
-            document = yaml.safe_load(stream.read())
-        except yaml.YAMLError as exc:
-            raise ParseError(f"Malformed YAML: {exc}") from exc
-        if not isinstance(document, dict):
-            raise ParseError("YAML document must be an object")
-        return document
+            return load_yaml_document(stream.read())
+        except YAMLDocumentError as exc:
+            raise ParseError(str(exc)) from exc
 
 
 class YAMLParser(_YAMLParser):
