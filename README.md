@@ -195,6 +195,12 @@ acceptable Nautobot object types that may realize it. Use `node_type` for the
 intent catalog classification and `accepted_actual_types` for candidate matching
 and explicit realized-object validation.
 
+For a compute-backed guest OS, set the node's `accepted_actual_types` to `device`:
+`DesiredNode.realized_device` is the guest-OS/nodeutils realization. Its Proxmox
+`virtual_machine` is independently linked through
+`DesiredComputeInstance.realized_vm`; it is not an alternative realization type
+for that DesiredNode. The two actual objects may both describe the same guest.
+
 Desired endpoints and all new placement/operational records reference a desired
 node only by its globally unique slug. References may target a node already in
 the database or one declared earlier in the same atomic import. Missing and
