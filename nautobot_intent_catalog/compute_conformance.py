@@ -31,7 +31,7 @@ PUBLIC_SYMBOLS = (
 )
 
 _ENDPOINT = {
-    "endpoint_type": "primary", "mac_address": "bc:24:11:23:dc:b7", "mdns_name": "node.local",
+    "endpoint_type": "primary", "mac_address": "aa:bb:cc:dd:ee:01", "mdns_name": "node.local",
     "ip_policy": "static", "ip_address": "192.0.2.10/24", "gateway_address": "192.0.2.1", "dns_name": None,
     "generate_dnsmasq": False,
 }
@@ -55,7 +55,7 @@ CASES: tuple[dict[str, Any], ...] = (
     {"id": "platform-bad", "rule": "validate_platform_config", "input": {"value": {"bad": "x"}}},
     {"id": "instance-ok", "rule": "validate_instance_config", "input": {"value": {"template": "x"}, "instance_kind": "virtual_machine"}},
     {"id": "instance-bad", "rule": "validate_instance_config", "input": {"value": {"template": "x", "unprivileged": True}, "instance_kind": "virtual_machine"}},
-    {"id": "mac-ok", "rule": "normalize_mac_address", "input": {"value": "BC-24-11-23-DC-B7"}},
+    {"id": "mac-ok", "rule": "normalize_mac_address", "input": {"value": "AA-BB-CC-DD-EE-01"}},
     {"id": "mac-bad", "rule": "normalize_mac_address", "input": {"value": "bad"}},
     {"id": "ip-ok", "rule": "endpoint_has_usable_ip", "input": {"endpoint": _ENDPOINT}},
     {"id": "ip-bad", "rule": "endpoint_has_usable_ip", "input": {"endpoint": {**_ENDPOINT, "ip_address": "bad"}}},
