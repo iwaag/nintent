@@ -56,6 +56,9 @@ def _fake_model(rows):
 
 
 class StrictImportHelperTests(unittest.TestCase):
+    def test_endpoint_projection_includes_gateway_address(self) -> None:
+        self.assertIn("gateway_address", jobs.DESIRED_ENDPOINT_UPDATE_FIELD_NAMES)
+
     def test_validated_upsert_split_is_idempotent_for_matching_update_fields(self) -> None:
         row = _FakeObject(pk="existing-id", value="same")
         model = _fake_model([row])

@@ -50,6 +50,15 @@ IMPORT_ARTIFACT_FILENAME = "intent-import-result.json"
 ANALYSIS_SCHEMA_VERSION = "nintent.intent-analysis.v1"
 ANALYSIS_ARTIFACT_FILENAME = "intent-analysis-result.json"
 
+# The planner must project every YAML-owned endpoint field it later compares.
+# An omitted field looks like ``None`` on each repeat even after a successful
+# apply has persisted it.
+DESIRED_ENDPOINT_UPDATE_FIELD_NAMES = (
+    "ip_address", "gateway_address", "mac_address", "dns_name", "dns_name_source", "mdns_name",
+    "mdns_name_source", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "ip_policy",
+    "dnsmasq_record_type", "description",
+)
+
 try:
     from django.conf import settings
     from django.db import transaction
@@ -968,14 +977,11 @@ def _plan_import(load_result) -> list:
             )
         )
 
-    endpoint_field_names = (
-        "ip_address", "mac_address", "dns_name", "dns_name_source", "mdns_name",
-        "mdns_name_source", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "ip_policy",
-        "dnsmasq_record_type", "description",
-    )
     endpoint_rows = {
         (row["desired_node__slug"], row["name"], row["endpoint_type"]): row
-        for row in DesiredEndpoint.objects.values("pk", "desired_node__slug", "name", "endpoint_type", *endpoint_field_names)
+        for row in DesiredEndpoint.objects.values(
+            "pk", "desired_node__slug", "name", "endpoint_type", *DESIRED_ENDPOINT_UPDATE_FIELD_NAMES
+        )
     }
     planned_endpoint_keys = {
         (endpoint.desired_node, endpoint.name, endpoint.endpoint_type) for endpoint in load_result.desired_endpoints
@@ -1360,6 +1366,34 @@ def _confirm_import(load_result) -> list[dict]:
                     {
                         "model": "DesiredNode",
                         "identity": {"slug": node.slug},
+                        "field": key,
+                        "expected": _json_safe(value),
+                        "actual": _json_safe(getattr(obj, key)),
+                    }
+                )
+
+    for endpoint in load_result.desired_endpoints:
+        identity = {
+            "desired_node": endpoint.desired_node,
+            "name": endpoint.name,
+            "endpoint_type": endpoint.endpoint_type,
+        }
+        try:
+            desired_node = DesiredNode.objects.get(slug=endpoint.desired_node)
+            obj = DesiredEndpoint.objects.get(
+                desired_node=desired_node,
+                name=endpoint.name,
+                endpoint_type=endpoint.endpoint_type,
+            )
+        except (DesiredNode.DoesNotExist, DesiredEndpoint.DoesNotExist):
+            mismatches.append({"model": "DesiredEndpoint", "identity": identity, "reason": "not_found"})
+            continue
+        for key, value in desired_endpoint_defaults(endpoint).items():
+            if getattr(obj, key) != value:
+                mismatches.append(
+                    {
+                        "model": "DesiredEndpoint",
+                        "identity": identity,
                         "field": key,
                         "expected": _json_safe(value),
                         "actual": _json_safe(getattr(obj, key)),
