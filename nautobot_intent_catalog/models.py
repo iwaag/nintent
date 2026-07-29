@@ -57,43 +57,15 @@ else:
     class IntentSource(PrimaryModel):
         """Input source record used for intent import and analysis."""
 
-        SOURCE_GIT_REPOSITORY = "git_repository"
-        SOURCE_YAML_FILE = "yaml_file"
-        SOURCE_MANUAL = "manual"
-        SOURCE_API = "api"
-        SOURCE_GENERATED = "generated"
-        SOURCE_TYPE_CHOICES = (
-            (SOURCE_GIT_REPOSITORY, "Git repository"),
-            (SOURCE_YAML_FILE, "YAML file"),
-            (SOURCE_MANUAL, "Manual"),
-            (SOURCE_API, "API"),
-            (SOURCE_GENERATED, "Generated"),
-        )
-
-        name = models.CharField(max_length=255)
         slug = models.SlugField(max_length=255, unique=True)
-        source_type = models.CharField(
-            max_length=64,
-            choices=SOURCE_TYPE_CHOICES,
-            default=SOURCE_GIT_REPOSITORY,
-        )
-        url = models.URLField(unique=True, blank=True, null=True)
-        ref = models.CharField(max_length=255, blank=True, null=True)
-        enabled = models.BooleanField(default=True)
-        owner = models.CharField(max_length=255, blank=True, null=True)
-        description = models.TextField(blank=True, null=True)
-        source_config = models.JSONField(default=dict, blank=True)
-        last_import_status = models.CharField(max_length=64, blank=True, null=True)
-        last_imported_at = models.DateTimeField(blank=True, null=True)
-        last_import_summary = models.JSONField(default=dict, blank=True)
 
         class Meta:
-            ordering = ("name",)
+            ordering = ("slug",)
             verbose_name = "intent source"
             verbose_name_plural = "intent sources"
 
         def __str__(self) -> str:
-            return self.name
+            return self.slug
 
         def get_absolute_url(self) -> str:
             return reverse("plugins:nautobot_intent_catalog:intentsource", args=[self.pk])
@@ -139,7 +111,6 @@ else:
 
         name = models.SlugField(max_length=255)
         slug = models.SlugField(max_length=255)
-        display_name = models.CharField(max_length=255)
         service_type = models.CharField(
             max_length=64,
             choices=SERVICE_TYPE_CHOICES,
@@ -155,19 +126,8 @@ else:
             on_delete=models.CASCADE,
             related_name="desired_services",
         )
-        source_ref = models.CharField(max_length=255, blank=True, null=True)
-        source_catalog_path = models.CharField(max_length=512, blank=True, null=True)
-        catalog_kind = models.CharField(max_length=64, blank=True, null=True)
         catalog_namespace = models.CharField(max_length=255, default="default")
         catalog_metadata_name = models.CharField(max_length=255)
-        catalog_owner = models.CharField(max_length=255, blank=True, null=True)
-        catalog_lifecycle = models.CharField(max_length=64, blank=True, null=True)
-        prefers_gpu = models.BooleanField(default=False)
-        min_memory_gb = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
-        requirements = models.JSONField(default=dict, blank=True)
-        analysis_provenance = models.JSONField(default=dict, blank=True, editable=False)
-        notes = models.TextField(blank=True, null=True)
-        last_analyzed_at = models.DateTimeField(blank=True, null=True)
 
         class Meta:
             ordering = ("name",)
@@ -186,7 +146,7 @@ else:
             )
 
         def __str__(self) -> str:
-            return self.display_name or self.name
+            return self.name
 
         def get_absolute_url(self) -> str:
             return reverse("plugins:nautobot_intent_catalog:desiredservice", args=[self.pk])
@@ -299,7 +259,6 @@ else:
             default=LIFECYCLE_ACTIVE,
         )
         role = models.CharField(max_length=255, blank=True, null=True)
-        description = models.TextField(blank=True, null=True)
         accepted_actual_types = models.JSONField(
             default=list,
             blank=True,
@@ -309,13 +268,6 @@ else:
             ),
         )
         expected_spec = models.JSONField(default=dict, blank=True)
-        intent_source = models.ForeignKey(
-            IntentSource,
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-            related_name="desired_nodes",
-        )
         realized_device = models.ForeignKey(
             "dcim.Device",
             on_delete=models.SET_NULL,
@@ -323,14 +275,6 @@ else:
             null=True,
             related_name="intent_catalog_desired_nodes",
         )
-        realized_device_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("override", "Override")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
-        notes = models.TextField(blank=True, null=True)
 
         class Meta:
             ordering = ("name",)
@@ -371,17 +315,6 @@ else:
                         )
                     }
                 )
-
-            source_errors = {}
-            for relation_name in ("realized_device",):
-                relation_id = getattr(self, f"{relation_name}_id")
-                source = getattr(self, f"{relation_name}_source")
-                if bool(relation_id) != bool(source):
-                    source_errors[f"{relation_name}_source"] = (
-                        f"{relation_name}_source must be set exactly when {relation_name} is set."
-                    )
-            if source_errors:
-                raise ValidationError(source_errors)
 
             if (
                 self.pk
@@ -454,21 +387,7 @@ else:
         )
         mac_address = models.CharField(max_length=17, blank=True, null=True)
         dns_name = models.CharField(max_length=255, blank=True, null=True)
-        dns_name_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("intent", "Intent")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
         mdns_name = models.CharField(max_length=255, blank=True, null=True)
-        mdns_name_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("intent", "Intent")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
         vpn_dns_name = models.CharField(max_length=255, blank=True, null=True)
         protocol = models.CharField(max_length=64, blank=True, null=True)
         port = models.PositiveIntegerField(blank=True, null=True)
@@ -485,14 +404,6 @@ else:
             null=True,
             related_name="intent_catalog_desired_endpoints",
         )
-        realized_ip_address_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("override", "Override")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
-        description = models.TextField(blank=True, null=True)
 
         class Meta:
             ordering = ("desired_node__name", "endpoint_type", "name")
@@ -519,17 +430,6 @@ else:
         def clean(self):
             super().clean()
             errors = {}
-            for value_name in ("dns_name", "mdns_name", "realized_ip_address"):
-                value = (
-                    getattr(self, "realized_ip_address_id")
-                    if value_name == "realized_ip_address"
-                    else getattr(self, value_name)
-                )
-                source = getattr(self, f"{value_name}_source")
-                if bool(value) != bool(source):
-                    errors[f"{value_name}_source"] = (
-                        f"{value_name}_source must be set exactly when {value_name} is set."
-                    )
             try:
                 self.mac_address = normalize_mac_address(self.mac_address)
             except ComputeContractError as exc:
@@ -552,9 +452,6 @@ else:
     class DesiredComputePlatform(PrimaryModel):
         """A Proxmox scope capable of realizing desired compute instances."""
 
-        PROVIDER_TYPE_PROXMOX = PROVIDER_TYPE_PROXMOX
-        PROVIDER_TYPE_CHOICES = ((PROVIDER_TYPE_PROXMOX, "Proxmox"),)
-
         LIFECYCLE_PLANNED = "planned"
         LIFECYCLE_APPROVED = "approved"
         LIFECYCLE_ACTIVE = "active"
@@ -570,11 +467,6 @@ else:
 
         name = models.CharField(max_length=255)
         slug = models.SlugField(max_length=255, unique=True)
-        provider_type = models.CharField(
-            max_length=32,
-            choices=PROVIDER_TYPE_CHOICES,
-            default=PROVIDER_TYPE_PROXMOX,
-        )
         lifecycle = models.CharField(
             max_length=64,
             choices=LIFECYCLE_CHOICES,
@@ -585,11 +477,6 @@ else:
             on_delete=models.PROTECT,
             related_name="controlled_compute_platforms",
         )
-        config_schema_version = models.CharField(
-            max_length=16,
-            default=CONFIG_SCHEMA_VERSION_V1,
-            editable=False,
-        )
         config = models.JSONField(default=dict, blank=True)
         realized_cluster = models.ForeignKey(
             "virtualization.Cluster",
@@ -598,27 +485,12 @@ else:
             null=True,
             related_name="intent_catalog_desired_compute_platforms",
         )
-        realized_cluster_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("override", "Override")),
-            blank=True,
-            null=True,
-            editable=False,
-        )
 
         class Meta:
             ordering = ("name",)
             verbose_name = "desired compute platform"
             verbose_name_plural = "desired compute platforms"
             constraints = (
-                models.CheckConstraint(
-                    check=models.Q(provider_type="proxmox"),
-                    name="dcp_provider_type_proxmox",
-                ),
-                models.CheckConstraint(
-                    check=models.Q(config_schema_version="v1"),
-                    name="dcp_config_schema_v1",
-                ),
                 models.CheckConstraint(
                     check=models.expressions.RawSQL(
                         "jsonb_typeof(config) = 'object'",
@@ -639,29 +511,12 @@ else:
             super().clean()
             errors = {}
             try:
-                validate_provider_type(self.provider_type)
-            except ComputeContractError as exc:
-                errors["provider_type"] = str(exc)
-
-            try:
-                self.config_schema_version = validate_config_schema_version(
-                    self.config_schema_version or None
-                )
-            except ComputeContractError as exc:
-                errors["config_schema_version"] = str(exc)
-
-            try:
                 self.config = validate_platform_config(self.config)
             except ComputeContractError as exc:
                 errors["config"] = str(exc)
 
             if self.control_node_id and self.control_node.lifecycle == DesiredNode.LIFECYCLE_RETIRED:
                 errors["control_node"] = "The control node must not be retired."
-
-            if not link_source_pairing_is_valid(self.realized_cluster_id, self.realized_cluster_source):
-                errors["realized_cluster_source"] = (
-                    "realized_cluster_source must be set exactly when realized_cluster is set."
-                )
 
             if errors:
                 raise ValidationError(errors)
@@ -753,11 +608,6 @@ else:
         vcpus = models.PositiveIntegerField()
         memory_mb = models.PositiveIntegerField()
         root_disk_gb = models.PositiveIntegerField()
-        config_schema_version = models.CharField(
-            max_length=16,
-            default=CONFIG_SCHEMA_VERSION_V1,
-            editable=False,
-        )
         config = models.JSONField(default=dict, blank=True)
         realized_vm = models.ForeignKey(
             "virtualization.VirtualMachine",
@@ -765,13 +615,6 @@ else:
             blank=True,
             null=True,
             related_name="intent_catalog_desired_compute_instances",
-        )
-        realized_vm_source = models.CharField(
-            max_length=16,
-            choices=(("derived", "Derived"), ("override", "Override")),
-            blank=True,
-            null=True,
-            editable=False,
         )
 
         class Meta:
@@ -791,10 +634,6 @@ else:
                     check=models.Q(root_disk_gb__gte=ROOT_DISK_GB_MIN)
                     & models.Q(root_disk_gb__lte=ROOT_DISK_GB_MAX),
                     name="dci_root_disk_gb_bounds",
-                ),
-                models.CheckConstraint(
-                    check=models.Q(config_schema_version="v1"),
-                    name="dci_config_schema_v1",
                 ),
                 models.CheckConstraint(
                     check=models.expressions.RawSQL(
@@ -837,20 +676,9 @@ else:
             except ComputeContractError as exc:
                 errors["root_disk_gb"] = str(exc)
             try:
-                self.config_schema_version = validate_config_schema_version(
-                    self.config_schema_version or None
-                )
-            except ComputeContractError as exc:
-                errors["config_schema_version"] = str(exc)
-            try:
                 self.config = validate_instance_config(self.config, instance_kind=self.instance_kind)
             except ComputeContractError as exc:
                 errors["config"] = str(exc)
-
-            if not link_source_pairing_is_valid(self.realized_vm_id, self.realized_vm_source):
-                errors["realized_vm_source"] = (
-                    "realized_vm_source must be set exactly when realized_vm is set."
-                )
 
             if not errors and self.realized_vm_id:
                 platform = self.platform
@@ -891,17 +719,6 @@ else:
             (STATE_DISABLED, "Disabled"),
         )
 
-        SOURCE_MANUAL = "manual"
-        SOURCE_YAML = "yaml"
-        SOURCE_POLICY = "policy"
-        SOURCE_GENERATED = "generated"
-        ASSIGNMENT_SOURCE_CHOICES = (
-            (SOURCE_MANUAL, "Manual"),
-            (SOURCE_YAML, "YAML"),
-            (SOURCE_POLICY, "Policy"),
-            (SOURCE_GENERATED, "Generated"),
-        )
-
         desired_service = models.ForeignKey(
             DesiredService,
             on_delete=models.PROTECT,
@@ -925,19 +742,12 @@ else:
             choices=DESIRED_STATE_CHOICES,
             default=STATE_ACTIVE,
         )
-        instance_role = models.CharField(max_length=64, blank=True, null=True)
         deployment_profile = models.SlugField(max_length=255)
         config_schema_version = models.CharField(
             max_length=64,
             default="1",
         )
         config = models.JSONField(default=dict, blank=True)
-        assignment_source = models.CharField(
-            max_length=32,
-            choices=ASSIGNMENT_SOURCE_CHOICES,
-            default=SOURCE_MANUAL,
-        )
-        reason = models.TextField(blank=True, null=True)
 
         class Meta:
             ordering = ("desired_service__name", "instance_name")
@@ -1159,7 +969,6 @@ else:
         )
         generate_dnsmasq = models.BooleanField(default=False)
         dnsmasq_options = models.JSONField(default=dict, blank=True)
-        description = models.TextField(blank=True, null=True)
 
         class Meta:
             ordering = ("start_address", "end_address", "name")

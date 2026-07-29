@@ -61,19 +61,7 @@ class IntentSourceEntry:
     identified by ``slug``.
     """
 
-    url: str | None = None
-    slug: str | None = None
-    name: str | None = None
-    source_type: str = "git_repository"
-    enabled: bool = True
-    ref: str | None = None
-    owner: str | None = None
-    service_hint: str | None = None
-    catalog_paths: list[str] = field(default_factory=list)
-    basic_file_paths: list[str] = field(default_factory=list)
-    catalog_paths_defaulted: bool = False
-    basic_file_paths_defaulted: bool = False
-    raw_url_template: str | None = None
+    slug: str
 
 
 @dataclass(frozen=True)
@@ -169,17 +157,8 @@ class DesiredServiceEntry:
     service_type: str
     name: str
     slug: str
-    display_name: str
     catalog_namespace: str = "default"
     lifecycle: str = "proposed"
-    catalog_kind: str | None = None
-    catalog_owner: str | None = None
-    catalog_lifecycle: str | None = None
-    source_ref: str | None = None
-    source_catalog_path: str | None = None
-    prefers_gpu: bool = False
-    min_memory_gb: float | None = None
-    notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -191,12 +170,9 @@ class DesiredServicePlacementEntry:
     desired_node: str
     desired_endpoint: dict[str, str] | None
     desired_state: str
-    instance_role: str | None
     deployment_profile: str
     config_schema_version: str
     config: dict[str, Any]
-    assignment_source: str
-    reason: str | None
 
 
 @dataclass(frozen=True)
@@ -430,65 +406,21 @@ def _normalize_intent_source_entry(item: Any, index: int) -> tuple[IntentSourceE
     """
 
     section = f"intent_sources entry {index}"
-    if isinstance(item, str):
-        item = {"url": item}
-
     if not isinstance(item, dict):
-        return None, [f"Entry {index} must be a URL string or mapping."]
+        return None, [f"Entry {index} must be a mapping."]
 
     unknown = sorted(str(key) for key in item if key not in _INTENT_SOURCE_KEYS)
     if unknown:
         return None, [f"{section} has unknown fields: {', '.join(unknown)}."]
 
-    source_type, source_type_error = _choice_with_default_or_error(
-        item.get("source_type"),
-        _INTENT_SOURCE_TYPES,
-        f"{section} source_type",
-        "git_repository",
-    )
-    if source_type_error:
-        return None, [source_type_error]
-
-    raw_url = item.get("url")
     slug = _optional_str(item.get("slug"))
-    if source_type == "git_repository":
-        if not raw_url:
-            return None, [f"Entry {index} is missing required field: url."]
-    elif not slug:
+    if not slug:
         return None, [f"{section} is missing required field: slug."]
 
     if slug and not _SLUG_RE.fullmatch(slug):
         return None, [f"{section} slug must be a lowercase slug."]
 
-    catalog_paths, catalog_paths_defaulted = _string_list_with_default(
-        item,
-        "catalog_paths",
-        DEFAULT_CATALOG_PATHS,
-    )
-    basic_file_paths, basic_file_paths_defaulted = _string_list_with_default(
-        item,
-        "basic_file_paths",
-        DEFAULT_BASIC_FILE_PATHS,
-    )
-
-    return (
-        IntentSourceEntry(
-            url=str(raw_url) if raw_url else None,
-            slug=slug,
-            name=_optional_str(item.get("name")),
-            source_type=source_type,
-            enabled=_as_bool(item.get("enabled", True)),
-            ref=_optional_str(item.get("ref")),
-            owner=_optional_str(item.get("owner")),
-            service_hint=_optional_str(item.get("service_hint")),
-            catalog_paths=catalog_paths,
-            basic_file_paths=basic_file_paths,
-            catalog_paths_defaulted=catalog_paths_defaulted,
-            basic_file_paths_defaulted=basic_file_paths_defaulted,
-            raw_url_template=_optional_str(item.get("raw_url_template")),
-        ),
-        [],
-    )
+    return IntentSourceEntry(slug=slug), []
 
 
 def _normalize_desired_node_entry(item: Any, index: int) -> tuple[DesiredNodeEntry | None, list[str]]:
@@ -630,23 +562,13 @@ def _normalize_desired_service_entry(item: Any, index: int) -> tuple[DesiredServ
         "service_type",
         "name",
         "slug",
-        "display_name",
         "lifecycle",
-        "catalog_kind",
-        "catalog_owner",
-        "catalog_lifecycle",
-        "source_ref",
-        "source_catalog_path",
-        "prefers_gpu",
-        "min_memory_gb",
-        "notes",
     }
     required = {
         "intent_source",
         "catalog_metadata_name",
         "service_type",
         "name",
-        "display_name",
     }
     errors = _strict_mapping_errors(item, section, allowed, required)
     if errors:
@@ -660,7 +582,6 @@ def _normalize_desired_service_entry(item: Any, index: int) -> tuple[DesiredServ
     )
     service_type = _strict_choice(item.get("service_type"), _SERVICE_TYPES, f"{section} service_type", errors)
     name = _strict_slug(item.get("name"), f"{section} name", errors)
-    display_name = _strict_nonempty_string(item.get("display_name"), f"{section} display_name", errors)
 
     if "catalog_namespace" in item:
         catalog_namespace = _strict_nonempty_string(
@@ -680,24 +601,6 @@ def _normalize_desired_service_entry(item: Any, index: int) -> tuple[DesiredServ
     if "lifecycle" in item:
         lifecycle = _strict_choice(item.get("lifecycle"), _LIFECYCLES_SERVICE, f"{section} lifecycle", errors)
 
-    catalog_kind = _strict_optional_string(item.get("catalog_kind"), f"{section} catalog_kind", errors)
-    catalog_owner = _strict_optional_string(item.get("catalog_owner"), f"{section} catalog_owner", errors)
-    catalog_lifecycle = _strict_optional_string(item.get("catalog_lifecycle"), f"{section} catalog_lifecycle", errors)
-    source_ref = _strict_optional_string(item.get("source_ref"), f"{section} source_ref", errors)
-    source_catalog_path = _strict_optional_string(
-        item.get("source_catalog_path"),
-        f"{section} source_catalog_path",
-        errors,
-    )
-    notes = _strict_optional_string(item.get("notes"), f"{section} notes", errors)
-
-    prefers_gpu = item.get("prefers_gpu", False)
-    if not isinstance(prefers_gpu, bool):
-        errors.append(f"{section} prefers_gpu must be a boolean.")
-        prefers_gpu = False
-
-    min_memory_gb = _optional_number(item.get("min_memory_gb"), f"{section} min_memory_gb", errors)
-
     if errors:
         return None, errors
 
@@ -708,17 +611,8 @@ def _normalize_desired_service_entry(item: Any, index: int) -> tuple[DesiredServ
             service_type=service_type,
             name=name,
             slug=slug,
-            display_name=display_name,
             catalog_namespace=catalog_namespace,
             lifecycle=lifecycle,
-            catalog_kind=catalog_kind,
-            catalog_owner=catalog_owner,
-            catalog_lifecycle=catalog_lifecycle,
-            source_ref=source_ref,
-            source_catalog_path=source_catalog_path,
-            prefers_gpu=prefers_gpu,
-            min_memory_gb=min_memory_gb,
-            notes=notes,
         ),
         [],
     )
@@ -889,12 +783,9 @@ def _normalize_desired_service_placement_entry(
         "desired_node",
         "desired_endpoint",
         "desired_state",
-        "instance_role",
         "deployment_profile",
         "config_schema_version",
         "config",
-        "assignment_source",
-        "reason",
     }
     required = {
         "desired_service",
@@ -904,7 +795,6 @@ def _normalize_desired_service_placement_entry(
         "deployment_profile",
         "config_schema_version",
         "config",
-        "assignment_source",
     }
     errors = _strict_mapping_errors(item, section, allowed, required)
     if errors:
@@ -941,12 +831,6 @@ def _normalize_desired_service_placement_entry(
         f"{section} desired_state",
         errors,
     )
-    assignment_source = _strict_choice(
-        item.get("assignment_source"),
-        _ASSIGNMENT_SOURCES,
-        f"{section} assignment_source",
-        errors,
-    )
     config = item.get("config")
     if not isinstance(config, dict):
         errors.append(f"{section} config must be a mapping.")
@@ -957,8 +841,6 @@ def _normalize_desired_service_placement_entry(
         except ContractError as exc:
             errors.append(f"{section} config must be JSON-compatible with string mapping keys: {exc}")
 
-    instance_role = _strict_optional_string(item.get("instance_role"), f"{section} instance_role", errors)
-    reason = _strict_optional_string(item.get("reason"), f"{section} reason", errors)
     if errors:
         return None, errors
     return (
@@ -968,12 +850,9 @@ def _normalize_desired_service_placement_entry(
             desired_node=desired_node,
             desired_endpoint=desired_endpoint,
             desired_state=desired_state,
-            instance_role=instance_role,
             deployment_profile=deployment_profile,
             config_schema_version=config_schema_version,
             config=config,
-            assignment_source=assignment_source,
-            reason=reason,
         ),
         [],
     )
@@ -1486,19 +1365,8 @@ def _resolve_configured_path(value: str | Path) -> Path:
     return Path.cwd() / path
 
 
-_INTENT_SOURCE_TYPES = {"git_repository", "manual"}
 _INTENT_SOURCE_KEYS = {
-    "url",
     "slug",
-    "name",
-    "source_type",
-    "enabled",
-    "ref",
-    "owner",
-    "service_hint",
-    "catalog_paths",
-    "basic_file_paths",
-    "raw_url_template",
 }
 _NODE_TYPES = {"device", "virtual_machine", "container", "service_host"}
 _ACTUAL_TYPES = {"device", "virtual_machine", "container"}

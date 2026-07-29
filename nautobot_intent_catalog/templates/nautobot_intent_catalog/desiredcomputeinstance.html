@@ -56,10 +56,6 @@
                         <td>{{ object.root_disk_gb }}</td>
                     </tr>
                     <tr>
-                        <th scope="row">Config Schema Version</th>
-                        <td><code>{{ object.config_schema_version }}</code></td>
-                    </tr>
-                    <tr>
                         <th scope="row">Config</th>
                         <td><pre>{{ object.config|default_if_none:"{}" }}</pre></td>
                     </tr>
@@ -76,7 +72,6 @@
                         <td>
                             {% if object.realized_vm %}
                                 <a href="{{ object.realized_vm.get_absolute_url }}">{{ object.realized_vm }}</a>
-                                ({{ object.realized_vm_source|default:"no source" }})
                             {% else %}
                                 - (read-only in Phase 3)
                             {% endif %}

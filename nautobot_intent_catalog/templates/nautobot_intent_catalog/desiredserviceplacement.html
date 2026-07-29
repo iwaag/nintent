@@ -11,12 +11,9 @@
             <tr><th scope="row">Desired Node</th><td><a href="{{ object.desired_node.get_absolute_url }}">{{ object.desired_node }}</a></td></tr>
             <tr><th scope="row">Desired Endpoint</th><td>{% if object.desired_endpoint %}<a href="{{ object.desired_endpoint.get_absolute_url }}">{{ object.desired_endpoint }}</a>{% else %}-{% endif %}</td></tr>
             <tr><th scope="row">Desired State</th><td>{{ object.get_desired_state_display }}</td></tr>
-            <tr><th scope="row">Instance Role</th><td>{{ object.instance_role|default:"-" }}</td></tr>
             <tr><th scope="row">Deployment Profile</th><td><code>{{ object.deployment_profile }}</code></td></tr>
             <tr><th scope="row">Config Schema Version</th><td><code>{{ object.config_schema_version }}</code></td></tr>
             <tr><th scope="row">Config</th><td><pre>{{ object.config }}</pre></td></tr>
-            <tr><th scope="row">Assignment Source</th><td>{{ object.get_assignment_source_display }}</td></tr>
-            <tr><th scope="row">Reason</th><td>{{ object.reason|default:"-" }}</td></tr>
         </table>
     </div>
 </div>

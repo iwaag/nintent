@@ -6,7 +6,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-from .analysis import analyze_intent_sources
 from .importers import (
     desired_compute_instance_defaults,
     desired_compute_instance_identity,
@@ -14,13 +13,10 @@ from .importers import (
     desired_compute_platform_identity,
     desired_node_operational_override_defaults,
     desired_node_operational_override_identity,
-    desired_service_create_defaults,
-    desired_service_update_fields,
     desired_service_entry_defaults,
     desired_service_entry_identity,
     desired_service_entry_locked_fields,
     desired_service_entry_update_fields,
-    desired_service_identity,
     desired_service_placement_defaults,
     desired_service_placement_identity,
     desired_endpoint_defaults,
@@ -31,32 +27,25 @@ from .importers import (
     desired_node_identity,
     desired_node_update_fields,
     intent_source_defaults,
-    plan_dependency_sync,
 )
-from .analysis_plan import dependency_planned_objects, is_dependency_scope_complete
 from .import_plan import (
     CANONICAL_IMPORT_ROOTS,
-    build_analysis_artifact,
     build_artifact,
     plan_upsert,
     unresolved_reference,
 )
-from .loaders import IntentSourceEntry
 from .loaders import load_default_intent_sources, load_intent_sources
 from .intent_contract import require_unique_reference
 
 IMPORT_SCHEMA_VERSION = "nintent.intent-import.v1"
 IMPORT_ARTIFACT_FILENAME = "intent-import-result.json"
-ANALYSIS_SCHEMA_VERSION = "nintent.intent-analysis.v1"
-ANALYSIS_ARTIFACT_FILENAME = "intent-analysis-result.json"
 
 # The planner must project every YAML-owned endpoint field it later compares.
 # An omitted field looks like ``None`` on each repeat even after a successful
 # apply has persisted it.
 DESIRED_ENDPOINT_UPDATE_FIELD_NAMES = (
-    "ip_address", "gateway_address", "mac_address", "dns_name", "dns_name_source", "mdns_name",
-    "mdns_name_source", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "ip_policy",
-    "dnsmasq_record_type", "description",
+    "ip_address", "gateway_address", "mac_address", "dns_name", "mdns_name", "vpn_dns_name",
+    "protocol", "port", "generate_dnsmasq", "ip_policy", "dnsmasq_record_type",
 )
 
 try:
@@ -197,102 +186,6 @@ else:
             )
 
 
-    class AnalyzeIntentSources(Job):
-        """Analyze DB-backed intent sources and plan/apply desired services plus dependencies.
-
-        Defaults to a zero-write preview (plan Section 6). Fetch/normalize (`analyze_intent_sources`,
-        unchanged) always runs; only `apply=true` reaches `_apply_analysis()`.
-        """
-
-        fetch_timeout = IntegerVar(
-            default=10,
-            description="HTTP timeout in seconds for each lightweight file request.",
-        )
-        include_disabled = BooleanVar(
-            default=False,
-            description="Include disabled IntentSource rows in analysis.",
-        )
-        apply = BooleanVar(
-            default=False,
-            description=(
-                "Commit source/catalog-owned changes atomically. Preview (apply=false, the "
-                "default) performs zero database writes."
-            ),
-        )
-
-        class Meta:
-            name = "Analyze Intent Sources"
-            description = "Analyze IntentSource records and plan/apply desired services plus dependencies."
-            has_sensitive_variables = False
-
-        def run(self, fetch_timeout: int, include_disabled: bool, apply: bool = False) -> None:
-            queryset = IntentSource.objects.all()
-            if not include_disabled:
-                queryset = queryset.filter(enabled=True)
-            intent_sources = list(queryset.order_by("url"))
-            entries = [_entry_from_intent_source(intent_source) for intent_source in intent_sources]
-            source_by_url = {intent_source.url: intent_source for intent_source in intent_sources}
-
-            result = analyze_intent_sources(entries, fetch_timeout=float(fetch_timeout))
-            now = timezone.now()
-
-            planned_objects, plan_errors = _plan_analysis(result, source_by_url, now)
-            errors = [*plan_errors, *result.errors]
-            blocked = bool(errors) or any(obj.action == "conflict" for obj in planned_objects)
-            mode = "apply" if apply else "preview"
-
-            attempted = False
-            committed = False
-            transaction_status = "not_requested"
-            transaction_error: str | None = None
-            confirmation_status = "not_applicable"
-            confirmation_mismatches: list[dict] = []
-
-            if apply:
-                if blocked:
-                    transaction_status = "blocked"
-                else:
-                    attempted = True
-                    try:
-                        with transaction.atomic():
-                            _apply_analysis(result, source_by_url, now)
-                    except Exception as exc:  # noqa: BLE001 - reported truthfully below
-                        transaction_status = "rolled_back"
-                        transaction_error = f"{exc.__class__.__name__}: {exc}"
-                    else:
-                        committed = True
-                        transaction_status = "committed"
-                        confirmation_mismatches = _confirm_analysis(result, source_by_url)
-                        confirmation_status = "confirmed" if not confirmation_mismatches else "mismatched"
-
-            artifact = build_analysis_artifact(
-                schema_version=ANALYSIS_SCHEMA_VERSION,
-                mode=mode,
-                selected_sources=[
-                    {"slug": s.slug, "url": s.url, "name": s.name, "enabled": s.enabled} for s in intent_sources
-                ],
-                inputs=_analysis_inputs(result),
-                objects=planned_objects,
-                errors=errors,
-                apply_requested=apply,
-                attempted=attempted,
-                committed=committed,
-                transaction_status=transaction_status,
-                transaction_error=transaction_error,
-                confirmation_status=confirmation_status,
-                confirmation_mismatches=confirmation_mismatches,
-            )
-            self.logger.info(
-                "Intent source analysis %s summary: %s", mode, _json(artifact["totals_by_model_and_action"])
-            )
-            for error in errors:
-                self.logger.warning(error)
-            self.create_file(
-                ANALYSIS_ARTIFACT_FILENAME,
-                json.dumps(artifact, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
-            )
-
-
     class ReconcileDesiredIPAMIntent(Job):
         """Optionally create or link Nautobot IPAddress rows from explicit endpoint IP intent."""
 
@@ -408,7 +301,6 @@ else:
 
     jobs = (
         ImportIntentSources,
-        AnalyzeIntentSources,
         ReconcileDesiredIPAMIntent,
     )
     register_jobs(*jobs)
@@ -1521,7 +1413,4 @@ def _intent_source_lookup() -> dict:
     lookup = {}
     for intent_source in IntentSource.objects.all():
         lookup[intent_source.slug] = intent_source
-        lookup[intent_source.name] = intent_source
-        if intent_source.url:
-            lookup[intent_source.url] = intent_source
     return lookup

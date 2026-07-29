@@ -84,13 +84,9 @@ class AlignmentReviewSerializer(NautobotModelSerializer):
 class DesiredNodeSerializer(NautobotModelSerializer):
     """Serializer for desired node intent.
     
-    Only lifecycle, realized_device, and realized_device_source are writable.
+    Only lifecycle and realized_device are writable.
     All other fields are read-only.
     """
-
-    realized_device_source = serializers.ChoiceField(
-        choices=("derived", "override"), required=False, allow_null=True
-    )
 
     class Meta:
         model = DesiredNode
@@ -102,35 +98,18 @@ class DesiredNodeSerializer(NautobotModelSerializer):
             "lifecycle",
             "role",
             "realized_device",
-            "realized_device_source",
             "created",
             "last_updated",
         )
         read_only_fields = ("id", "name", "slug", "node_type", "role", "created", "last_updated")
 
     def to_internal_value(self, data):
-        allowed = {"lifecycle", "realized_device", "realized_device_source"}
+        allowed = {"lifecycle", "realized_device"}
         _check_allowed_mutation_keys(data, allowed, "DesiredNode mutation")
         return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        for relation_name in ("realized_device",):
-            if relation_name in attrs:
-                source_name = f"{relation_name}_source"
-                if attrs[relation_name] is None:
-                    attrs[source_name] = None
-                elif source_name not in attrs:
-                    attrs[source_name] = "override"
-            relation = attrs.get(relation_name, getattr(self.instance, relation_name, None))
-            source = attrs.get(
-                f"{relation_name}_source",
-                getattr(self.instance, f"{relation_name}_source", None),
-            )
-            if bool(relation) != bool(source):
-                raise serializers.ValidationError(
-                    {f"{relation_name}_source": f"Source must be set exactly when {relation_name} is set."}
-                )
         return attrs
 
 
@@ -140,40 +119,25 @@ class _ComputeLinkSerializer(NautobotModelSerializer):
     link_field = ""
 
     def to_internal_value(self, data):
-        source_field = f"{self.link_field}_source"
-        _check_allowed_mutation_keys(data, {self.link_field, source_field}, f"{self.Meta.model.__name__} mutation")
+        _check_allowed_mutation_keys(data, {self.link_field}, f"{self.Meta.model.__name__} mutation")
         return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        source_field = f"{self.link_field}_source"
-        if self.link_field in attrs:
-            if attrs[self.link_field] is None:
-                attrs[source_field] = None
-            elif source_field not in attrs:
-                attrs[source_field] = "override"
-        relation = attrs.get(self.link_field, getattr(self.instance, self.link_field, None))
-        source = attrs.get(source_field, getattr(self.instance, source_field, None))
-        if bool(relation) != bool(source):
-            raise serializers.ValidationError({source_field: f"Source must be set exactly when {self.link_field} is set."})
         return attrs
 
 
 class DesiredComputePlatformSerializer(_ComputeLinkSerializer):
     link_field = "realized_cluster"
-    realized_cluster_source = serializers.ChoiceField(choices=("derived", "override"), required=False, allow_null=True)
-
     class Meta:
         model = DesiredComputePlatform
-        fields = ("id", "name", "slug", "provider_type", "lifecycle", "control_node", "config", "realized_cluster", "realized_cluster_source", "created", "last_updated")
-        read_only_fields = ("id", "name", "slug", "provider_type", "lifecycle", "control_node", "config", "created", "last_updated")
+        fields = ("id", "name", "slug", "lifecycle", "control_node", "config", "realized_cluster", "created", "last_updated")
+        read_only_fields = ("id", "name", "slug", "lifecycle", "control_node", "config", "created", "last_updated")
 
 
 class DesiredComputeInstanceSerializer(_ComputeLinkSerializer):
     link_field = "realized_vm"
-    realized_vm_source = serializers.ChoiceField(choices=("derived", "override"), required=False, allow_null=True)
-
     class Meta:
         model = DesiredComputeInstance
-        fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm", "realized_vm_source", "created", "last_updated")
+        fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm", "created", "last_updated")
         read_only_fields = ("id", "desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "created", "last_updated")

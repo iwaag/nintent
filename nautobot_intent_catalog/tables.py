@@ -27,27 +27,15 @@ else:
     class IntentSourceTable(BaseTable):
         """Intent source list table."""
 
-        name = tables.LinkColumn()
+        slug = tables.LinkColumn()
 
         class Meta(BaseTable.Meta):
             model = IntentSource
             fields = (
-                "name",
-                "source_type",
-                "url",
-                "enabled",
-                "owner",
-                "last_import_status",
-                "last_imported_at",
+                "slug",
             )
             default_columns = (
-                "name",
-                "source_type",
-                "url",
-                "enabled",
-                "owner",
-                "last_import_status",
-                "last_imported_at",
+                "slug",
             )
 
 
@@ -66,20 +54,16 @@ else:
             model = DesiredService
             fields = (
                 "name",
-                "display_name",
                 "service_type",
                 "lifecycle",
                 "intent_source",
-                "catalog_owner",
                 "dependency_count",
             )
             default_columns = (
                 "name",
-                "display_name",
                 "service_type",
                 "lifecycle",
                 "intent_source",
-                "catalog_owner",
                 "dependency_count",
             )
 
@@ -197,7 +181,6 @@ else:
             fields = (
                 "name",
                 "slug",
-                "provider_type",
                 "lifecycle",
                 "control_node",
                 "realized_cluster",
@@ -249,10 +232,8 @@ else:
                 "desired_node",
                 "desired_endpoint",
                 "desired_state",
-                "instance_role",
                 "deployment_profile",
                 "config_schema_version",
-                "assignment_source",
             )
             default_columns = fields
 

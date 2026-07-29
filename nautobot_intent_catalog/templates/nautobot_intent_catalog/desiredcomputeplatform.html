@@ -20,10 +20,6 @@
                         <td><code>{{ object.slug }}</code></td>
                     </tr>
                     <tr>
-                        <th scope="row">Provider Type</th>
-                        <td>{{ object.get_provider_type_display|default:object.provider_type }}</td>
-                    </tr>
-                    <tr>
                         <th scope="row">Lifecycle</th>
                         <td>{{ object.get_lifecycle_display|default:object.lifecycle }}</td>
                     </tr>
@@ -38,10 +34,6 @@
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Config Schema Version</th>
-                        <td><code>{{ object.config_schema_version }}</code></td>
-                    </tr>
-                    <tr>
                         <th scope="row">Config</th>
                         <td><pre>{{ object.config|default_if_none:"{}" }}</pre></td>
                     </tr>
@@ -50,7 +42,6 @@
                         <td>
                             {% if object.realized_cluster %}
                                 <a href="{{ object.realized_cluster.get_absolute_url }}">{{ object.realized_cluster }}</a>
-                                ({{ object.realized_cluster_source|default:"no source" }})
                             {% else %}
                                 - (read-only in Phase 3)
                             {% endif %}

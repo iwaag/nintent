@@ -31,15 +31,13 @@ else:
 
         class Meta:
             model = IntentSource
-            fields = ("id", "name", "slug", "source_type", "url", "enabled", "owner", "last_import_status")
+            fields = ("id", "slug")
 
         def search(self, queryset, name, value):
             if not value.strip():
                 return queryset
             return (
-                queryset.filter(name__icontains=value)
-                | queryset.filter(slug__icontains=value)
-                | queryset.filter(url__icontains=value)
+                queryset.filter(slug__icontains=value)
             )
 
 
@@ -57,13 +55,12 @@ else:
                 "service_type",
                 "lifecycle",
                 "intent_source",
-                "catalog_owner",
             )
 
         def search(self, queryset, name, value):
             if not value.strip():
                 return queryset
-            return queryset.filter(name__icontains=value) | queryset.filter(display_name__icontains=value)
+            return queryset.filter(name__icontains=value) | queryset.filter(slug__icontains=value)
 
 
     class DesiredDependencyFilterSet(NautobotFilterSet):
@@ -104,7 +101,6 @@ else:
                 "node_type",
                 "lifecycle",
                 "role",
-                "intent_source",
                 "realized_device",
             )
 
@@ -161,7 +157,6 @@ else:
                 "id",
                 "name",
                 "slug",
-                "provider_type",
                 "lifecycle",
                 "control_node",
                 "realized_cluster",
@@ -211,10 +206,8 @@ else:
                 "desired_endpoint",
                 "instance_name",
                 "desired_state",
-                "instance_role",
                 "deployment_profile",
                 "config_schema_version",
-                "assignment_source",
             )
 
         def search(self, queryset, name, value):
@@ -222,7 +215,6 @@ else:
                 return queryset
             return (
                 queryset.filter(instance_name__icontains=value)
-                | queryset.filter(instance_role__icontains=value)
                 | queryset.filter(deployment_profile__icontains=value)
             )
 
