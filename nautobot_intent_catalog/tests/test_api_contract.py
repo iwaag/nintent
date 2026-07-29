@@ -289,13 +289,13 @@ if HAS_DJANGO:
                     )
                     self.assertEqual(self.client.delete(list_url, **self.header).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-        def test_braindump_patch_unknown_field_rejected_with_zero_write(self):
+        def test_braindump_patch_is_rejected_with_zero_write(self):
             braindump = models.BrainDumpDocument.objects.create(title="orig", body="orig-body", authorship="user_direct")
             detail_url = reverse("plugins-api:nautobot_intent_catalog-api:braindumpdocument-detail", kwargs={"pk": braindump.pk})
             response = self.client.patch(
                 detail_url, {"created": "2020-01-01T00:00:00Z"}, format="json", **self.header
             )
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
             braindump.refresh_from_db()
             self.assertEqual(braindump.title, "orig")
 
