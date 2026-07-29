@@ -61,3 +61,13 @@ else:
             result = apply_batch(document).as_dict()
             self.assertTrue(result["transaction"]["committed"])
             self.assertEqual(result["totals"]["create"], 2)
+
+        def test_apply_rolls_back_everything_when_full_clean_fails(self):
+            document = {"dry_run": False, "operations": [
+                {"op": "upsert", "kind": "intent_source", "key": {"slug": "rollback-source"}, "values": {}},
+                {"op": "upsert", "kind": "desired_node", "key": {"slug": "bad-node"},
+                 "values": {"name": "bad-node", "node_type": "not-a-choice", "lifecycle": "planned"}},
+            ]}
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertFalse(IntentSource.objects.filter(slug="rollback-source").exists())
