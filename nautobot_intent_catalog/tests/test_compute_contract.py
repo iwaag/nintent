@@ -393,6 +393,7 @@ class PrimaryEndpointTests(unittest.TestCase):
             "mdns_name": "node.local",
             "ip_policy": "static",
             "ip_address": "192.0.2.10/24",
+            "gateway_address": "192.0.2.1",
             "dns_name": None,
             "generate_dnsmasq": False,
         }
@@ -403,6 +404,9 @@ class PrimaryEndpointTests(unittest.TestCase):
         self.assertTrue(endpoint_has_usable_ip(self._endpoint()))
         self.assertTrue(endpoint_satisfies_compute_address_contract(self._endpoint()))
         self.assertFalse(endpoint_has_usable_ip(self._endpoint(ip_address="not-an-ip")))
+        self.assertFalse(endpoint_satisfies_compute_address_contract(self._endpoint(ip_address="192.0.2.10")))
+        self.assertFalse(endpoint_satisfies_compute_address_contract(self._endpoint(gateway_address="192.0.3.1")))
+        self.assertFalse(endpoint_satisfies_compute_address_contract(self._endpoint(ip_address="2001:db8::10/64", gateway_address="2001:db8::1")))
         self.assertFalse(endpoint_satisfies_compute_address_contract(self._endpoint(ip_policy="external")))
         self.assertTrue(
             endpoint_satisfies_compute_address_contract(

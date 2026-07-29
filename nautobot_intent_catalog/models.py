@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 def _endpoint_is_usable_local(endpoint) -> bool:
     return endpoint_has_usable_ip(endpoint) or any(
         str(getattr(endpoint, field_name, "") or "").strip()
@@ -444,6 +446,7 @@ else:
             default=ENDPOINT_TYPE_PRIMARY,
         )
         ip_address = models.CharField(max_length=128, blank=True, null=True)
+        gateway_address = models.CharField(max_length=128, blank=True, null=True)
         ip_policy = models.CharField(
             max_length=64,
             choices=IP_POLICY_CHOICES,
@@ -531,6 +534,16 @@ else:
                 self.mac_address = normalize_mac_address(self.mac_address)
             except ComputeContractError as exc:
                 errors["mac_address"] = str(exc)
+            if self.gateway_address:
+                try:
+                    interface = ipaddress.ip_interface(self.ip_address or "")
+                    gateway = ipaddress.ip_address(self.gateway_address)
+                    if self.ip_policy != self.IP_POLICY_STATIC or interface.version != 4 or gateway.version != 4:
+                        raise ValueError("gateway_address requires ip_policy static and an IPv4 CIDR ip_address.")
+                    if gateway not in interface.network or gateway in {interface.network.network_address, interface.network.broadcast_address}:
+                        raise ValueError("gateway_address must be a usable IPv4 address in the ip_address subnet.")
+                except ValueError as exc:
+                    errors["gateway_address"] = str(exc)
             if errors:
                 raise ValidationError(errors)
 

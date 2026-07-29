@@ -1199,6 +1199,38 @@ class EndpointDnsMdnsOmissionTests(unittest.TestCase):
         self.assertEqual(endpoint.mdns_name, "agexample.local")
 
 
+class EndpointGatewayValidationTests(unittest.TestCase):
+    def _load(self, text: str):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intent_sources.yaml"
+            path.write_text(text, encoding="utf-8")
+            return load_intent_sources(path)
+
+    def test_static_ipv4_cidr_gateway_is_preserved(self) -> None:
+        result = self._load(
+            "desired_endpoints:\n"
+            "  - name: primary\n"
+            "    desired_node: agexample\n"
+            "    ip_policy: static\n"
+            "    ip_address: 192.168.0.9/24\n"
+            "    gateway_address: 192.168.0.1\n"
+        )
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.desired_endpoints[0].gateway_address, "192.168.0.1")
+
+    def test_gateway_rejects_incomplete_or_invalid_static_network(self) -> None:
+        for ip_address, gateway_address in (("192.168.0.9", "192.168.0.1"), ("192.168.0.9/24", "192.168.1.1"), ("2001:db8::9/64", "2001:db8::1"), ("192.168.0.9/24", "broken")):
+            result = self._load(
+                "desired_endpoints:\n"
+                "  - name: primary\n"
+                "    desired_node: agexample\n"
+                "    ip_policy: static\n"
+                f"    ip_address: {ip_address}\n"
+                f"    gateway_address: {gateway_address}\n"
+            )
+            self.assertTrue(result.errors)
+
+
 class CanonicalFileIdentityCountTests(unittest.TestCase):
     """Plan.md Section 4.2/Step 1 item 3: the checked-in `nauto/seed/intent_sources.yaml` must
     load with zero errors and contain exactly the confirmed Phase 0 identity set. This test

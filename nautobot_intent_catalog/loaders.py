@@ -100,6 +100,7 @@ class DesiredEndpointEntry:
     desired_node: str
     endpoint_type: str = "primary"
     ip_address: str | None = None
+    gateway_address: str | None = None
     mac_address: str | None = None
     dns_name: str | None = None
     mdns_name: str | None = None
@@ -560,6 +561,7 @@ def _normalize_desired_endpoint_entry(item: Any, index: int) -> tuple[DesiredEnd
     if port_error:
         errors.append(port_error)
     ip_address = _optional_str(item.get("ip_address"))
+    gateway_address = _optional_str(item.get("gateway_address"))
     raw_ip_policy = item.get("ip_policy")
     ip_policy: str | None = None
     ip_policy_error: str | None = None
@@ -575,6 +577,16 @@ def _normalize_desired_endpoint_entry(item: Any, index: int) -> tuple[DesiredEnd
         errors.append(ip_policy_error)
     if ip_policy is None and not ip_address:
         ip_policy = "external"
+    if gateway_address:
+        try:
+            interface = ipaddress.ip_interface(ip_address or "")
+            gateway = ipaddress.ip_address(gateway_address)
+            if ip_policy != "static" or interface.version != 4 or gateway.version != 4:
+                raise ValueError("gateway_address requires ip_policy: static and an IPv4 CIDR ip_address")
+            if gateway not in interface.network or gateway in {interface.network.network_address, interface.network.broadcast_address}:
+                raise ValueError("gateway_address must be a usable IPv4 address in the ip_address subnet")
+        except ValueError as exc:
+            errors.append(f"desired_endpoints entry {index} {exc}")
     mac_address = None
     raw_mac_address = item.get("mac_address")
     if raw_mac_address is not None:
@@ -591,6 +603,7 @@ def _normalize_desired_endpoint_entry(item: Any, index: int) -> tuple[DesiredEnd
             desired_node=desired_node or "",
             endpoint_type=_choice(item.get("endpoint_type"), _ENDPOINT_TYPES, "primary"),
             ip_address=ip_address,
+            gateway_address=gateway_address,
             mac_address=mac_address,
             dns_name=_optional_str(item.get("dns_name")),
             mdns_name=_optional_str(item.get("mdns_name")),

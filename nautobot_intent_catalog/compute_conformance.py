@@ -25,14 +25,14 @@ PUBLIC_SYMBOLS = (
     "link_source_pairing_is_valid", "validate_config_schema_version", "validate_platform_config",
     "validate_instance_config", "validate_vmid", "validate_vcpus", "validate_memory_mb",
     "validate_root_disk_gb", "normalize_mac_address", "endpoint_has_usable_ip",
-    "endpoint_satisfies_compute_address_contract", "select_compute_primary_endpoint",
+    "static_ipv4_network", "endpoint_satisfies_compute_address_contract", "select_compute_primary_endpoint",
     "effective_lifecycle", "is_actionable_lifecycle", "effective_value",
     "effective_single_source_value",
 )
 
 _ENDPOINT = {
     "endpoint_type": "primary", "mac_address": "bc:24:11:23:dc:b7", "mdns_name": "node.local",
-    "ip_policy": "static", "ip_address": "192.0.2.10/24", "dns_name": None,
+    "ip_policy": "static", "ip_address": "192.0.2.10/24", "gateway_address": "192.0.2.1", "dns_name": None,
     "generate_dnsmasq": False,
 }
 
@@ -59,6 +59,10 @@ CASES: tuple[dict[str, Any], ...] = (
     {"id": "mac-bad", "rule": "normalize_mac_address", "input": {"value": "bad"}},
     {"id": "ip-ok", "rule": "endpoint_has_usable_ip", "input": {"endpoint": _ENDPOINT}},
     {"id": "ip-bad", "rule": "endpoint_has_usable_ip", "input": {"endpoint": {**_ENDPOINT, "ip_address": "bad"}}},
+    {"id": "network-ok", "rule": "static_ipv4_network", "input": {"endpoint": _ENDPOINT}},
+    {"id": "network-no-cidr", "rule": "static_ipv4_network", "input": {"endpoint": {**_ENDPOINT, "ip_address": "192.0.2.10"}}},
+    {"id": "network-other-subnet", "rule": "static_ipv4_network", "input": {"endpoint": {**_ENDPOINT, "gateway_address": "192.0.3.1"}}},
+    {"id": "network-ipv6", "rule": "static_ipv4_network", "input": {"endpoint": {**_ENDPOINT, "ip_address": "2001:db8::10/64", "gateway_address": "2001:db8::1"}}},
     {"id": "address-ok", "rule": "endpoint_satisfies_compute_address_contract", "input": {"endpoint": _ENDPOINT}},
     {"id": "address-bad", "rule": "endpoint_satisfies_compute_address_contract", "input": {"endpoint": {**_ENDPOINT, "ip_policy": "external"}}},
     {"id": "endpoint-zero", "rule": "select_compute_primary_endpoint", "input": {"endpoints": []}},
@@ -97,7 +101,7 @@ def _run(case: dict[str, Any]) -> Any:
     if rule == "select_compute_primary_endpoint":
         selected, code = contract.select_compute_primary_endpoint([_endpoint(item) for item in data["endpoints"]])
         return {"selected": selected is not None, "code": code}
-    if rule in {"endpoint_has_usable_ip", "endpoint_satisfies_compute_address_contract"}:
+    if rule in {"endpoint_has_usable_ip", "static_ipv4_network", "endpoint_satisfies_compute_address_contract"}:
         return getattr(contract, rule)(_endpoint(data["endpoint"]))
     if rule == "validate_instance_config":
         return contract.validate_instance_config(data["value"], instance_kind=data["instance_kind"])

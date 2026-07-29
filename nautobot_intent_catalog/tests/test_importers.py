@@ -303,6 +303,7 @@ class ImporterTests(unittest.TestCase):
             desired_endpoint_defaults(endpoint),
             {
                 "ip_address": "192.0.2.10/32",
+                "gateway_address": None,
                 "mac_address": None,
                 "dns_name": "edge-router-1.example.test",
                 "dns_name_source": "intent",
@@ -347,6 +348,7 @@ class ImporterTests(unittest.TestCase):
             desired_endpoint_defaults(endpoint, desired_node=desired_node),
             {
                 "ip_address": None,
+                "gateway_address": None,
                 "mac_address": None,
                 "dns_name": None,
                 "dns_name_source": None,

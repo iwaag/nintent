@@ -300,6 +300,27 @@ def endpoint_has_usable_ip(endpoint: Any) -> bool:
     return True
 
 
+def static_ipv4_network(endpoint: Any) -> list[str] | None:
+    """Return normalized initial-LXC IPv4 CIDR and gateway, or ``None``.
+
+    A gateway is intentionally part of the static creation contract rather
+    than something the playbook infers from a bridge or host route.
+    """
+
+    if getattr(endpoint, "ip_policy", None) != "static":
+        return None
+    try:
+        interface = ipaddress.ip_interface(str(getattr(endpoint, "ip_address", "") or ""))
+        gateway = ipaddress.ip_address(str(getattr(endpoint, "gateway_address", "") or ""))
+    except ValueError:
+        return None
+    if interface.version != 4 or gateway.version != 4 or gateway not in interface.network:
+        return None
+    if gateway in {interface.network.network_address, interface.network.broadcast_address}:
+        return None
+    return [str(interface), str(gateway)]
+
+
 def endpoint_satisfies_compute_address_contract(endpoint: Any) -> bool:
     """Return whether a primary endpoint satisfies the first Proxmox address contract."""
 
@@ -310,7 +331,7 @@ def endpoint_satisfies_compute_address_contract(endpoint: Any) -> bool:
             and bool(getattr(endpoint, "generate_dnsmasq", False))
         )
     if getattr(endpoint, "ip_policy", None) == "static":
-        return endpoint_has_usable_ip(endpoint)
+        return static_ipv4_network(endpoint) is not None
     return False
 
 

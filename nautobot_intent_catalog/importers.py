@@ -360,6 +360,7 @@ def desired_endpoint_defaults(endpoint: DesiredEndpointEntry, desired_node: Any 
 
     return {
         "ip_address": endpoint.ip_address,
+        "gateway_address": endpoint.gateway_address,
         "mac_address": endpoint.mac_address,
         "dns_name": dns_name,
         "dns_name_source": "intent" if dns_name_was_explicit else ("derived" if dns_name else None),
