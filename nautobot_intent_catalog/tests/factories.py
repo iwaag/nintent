@@ -40,12 +40,7 @@ else:
 
     def make_intent_source(**overrides) -> IntentSource:
         slug = _next("src")
-        defaults = {
-            "name": slug,
-            "slug": slug,
-            "source_type": IntentSource.SOURCE_MANUAL,
-            "enabled": True,
-        }
+        defaults = {"slug": slug}
         defaults.update(overrides)
         return IntentSource.objects.create(**defaults)
 
@@ -68,7 +63,6 @@ else:
         defaults = {
             "name": slug,
             "slug": slug,
-            "display_name": slug,
             "service_type": DesiredService.SERVICE_TYPE_SERVICE,
             "lifecycle": DesiredService.LIFECYCLE_ACTIVE,
             "intent_source": overrides.pop("intent_source", None) or make_intent_source(),
@@ -116,7 +110,6 @@ else:
         defaults = {
             "name": slug,
             "slug": slug,
-            "provider_type": DesiredComputePlatform.PROVIDER_TYPE_PROXMOX,
             "lifecycle": DesiredComputePlatform.LIFECYCLE_PLANNED,
             "control_node": overrides.pop("control_node", None) or make_desired_node(),
             "config": {},
@@ -152,7 +145,7 @@ else:
             "instance_name": name,
             "desired_state": DesiredServicePlacement.STATE_ACTIVE,
             "deployment_profile": "default",
-            "assignment_source": DesiredServicePlacement.SOURCE_MANUAL,
+            "config_schema_version": "1",
         }
         defaults.update(overrides)
         placement = DesiredServicePlacement(**defaults)
