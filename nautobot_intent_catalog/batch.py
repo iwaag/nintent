@@ -58,7 +58,7 @@ _FIELDS = {
     "desired_ip_range": {"name", "slug", "start_address", "end_address", "range_policy", "lifecycle", "generate_dnsmasq", "dnsmasq_options"},
     "desired_endpoint": {"desired_node", "name", "endpoint_type", "ip_address", "gateway_address", "ip_policy", "mac_address", "dns_name", "mdns_name", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "dnsmasq_record_type", "realized_ip_address"},
     "desired_compute_platform": {"name", "slug", "lifecycle", "control_node", "config", "realized_cluster"},
-    "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
+    "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "desired_presence", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
     "desired_service": {"intent_source", "name", "slug", "service_type", "lifecycle", "catalog_namespace", "catalog_metadata_name"},
     "desired_dependency": {"source_service", "dependency_kind", "namespace", "name", "raw_ref", "dependency_type", "resolution_status", "resolved_service", "notes"},
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},

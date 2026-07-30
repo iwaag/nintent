@@ -207,6 +207,7 @@ else:
                 "platform",
                 "instance_kind",
                 "desired_power_state",
+                "desired_presence",
                 "effective_lifecycle_display",
                 "vcpus",
                 "memory_mb",

@@ -44,6 +44,10 @@
                         <td>{{ object.get_desired_power_state_display|default:object.desired_power_state }}</td>
                     </tr>
                     <tr>
+                        <th scope="row">Desired Presence</th>
+                        <td>{{ object.get_desired_presence_display|default:object.desired_presence }}</td>
+                    </tr>
+                    <tr>
                         <th scope="row">vCPUs</th>
                         <td>{{ object.vcpus }}</td>
                     </tr>

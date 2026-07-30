@@ -57,13 +57,14 @@
                 {% with instances=object.desired_compute_instances.all %}
                     {% if instances %}
                         <table class="table table-hover table-headings">
-                            <thead><tr><th>Node</th><th>Kind</th><th>Power</th><th>Realized VM</th></tr></thead>
+                            <thead><tr><th>Node</th><th>Kind</th><th>Power</th><th>Presence</th><th>Realized VM</th></tr></thead>
                             <tbody>
                                 {% for instance in instances %}
                                     <tr>
                                         <td><a href="{{ instance.get_absolute_url }}">{{ instance.desired_node }}</a></td>
                                         <td>{{ instance.get_instance_kind_display|default:instance.instance_kind }}</td>
                                         <td>{{ instance.get_desired_power_state_display|default:instance.desired_power_state }}</td>
+                                        <td>{{ instance.get_desired_presence_display|default:instance.desired_presence }}</td>
                                         <td>{{ instance.realized_vm|default:"-" }}</td>
                                     </tr>
                                 {% endfor %}

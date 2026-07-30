@@ -181,6 +181,7 @@ else:
                 "platform",
                 "instance_kind",
                 "desired_power_state",
+                "desired_presence",
                 "realized_vm",
             )
 

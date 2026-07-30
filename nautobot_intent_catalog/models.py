@@ -24,6 +24,8 @@ try:
         COMPUTE_PRIMARY_ENDPOINT_AMBIGUOUS,
         COMPUTE_PRIMARY_ENDPOINT_MISSING,
         ComputeContractError,
+        DESIRED_PRESENCE_ABSENT,
+        DESIRED_PRESENCE_PRESENT,
         INSTANCE_KIND_CONTAINER,
         INSTANCE_KIND_VIRTUAL_MACHINE,
         MEMORY_MB_MAX,
@@ -37,12 +39,14 @@ try:
         VCPUS_MIN,
         effective_lifecycle,
         effective_value,
+        desired_presence_requires_retired,
         endpoint_has_usable_ip,
         is_actionable_lifecycle,
         link_source_pairing_is_valid,
         normalize_mac_address,
         select_compute_primary_endpoint,
         validate_config_schema_version,
+        validate_desired_presence,
         validate_instance_config,
         validate_memory_mb,
         validate_platform_config,
@@ -545,6 +549,15 @@ else:
         node = instance.desired_node
         platform = instance.platform
         effective = effective_lifecycle(node.lifecycle, platform.lifecycle)
+        if not desired_presence_requires_retired(instance.desired_presence, effective):
+            raise ValidationError(
+                {
+                    "desired_presence": (
+                        "desired_presence='absent' requires effective lifecycle 'retired'; "
+                        f"the effective lifecycle is {effective!r}."
+                    )
+                }
+            )
         if not is_actionable_lifecycle(effective):
             return effective
 
@@ -589,6 +602,13 @@ else:
             (POWER_STATE_STOPPED, "Stopped"),
         )
 
+        DESIRED_PRESENCE_PRESENT = DESIRED_PRESENCE_PRESENT
+        DESIRED_PRESENCE_ABSENT = DESIRED_PRESENCE_ABSENT
+        DESIRED_PRESENCE_CHOICES = (
+            (DESIRED_PRESENCE_PRESENT, "Present"),
+            (DESIRED_PRESENCE_ABSENT, "Absent"),
+        )
+
         desired_node = models.OneToOneField(
             DesiredNode,
             on_delete=models.CASCADE,
@@ -604,6 +624,11 @@ else:
             max_length=16,
             choices=POWER_STATE_CHOICES,
             default=POWER_STATE_RUNNING,
+        )
+        desired_presence = models.CharField(
+            max_length=16,
+            choices=DESIRED_PRESENCE_CHOICES,
+            default=DESIRED_PRESENCE_PRESENT,
         )
         vcpus = models.PositiveIntegerField()
         memory_mb = models.PositiveIntegerField()
@@ -663,6 +688,10 @@ else:
         def clean(self):
             super().clean()
             errors = {}
+            try:
+                self.desired_presence = validate_desired_presence(self.desired_presence)
+            except ComputeContractError as exc:
+                errors["desired_presence"] = str(exc)
             try:
                 self.vcpus = validate_vcpus(self.vcpus)
             except ComputeContractError as exc:

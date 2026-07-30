@@ -61,7 +61,9 @@ class BatchDecodeTests(unittest.TestCase):
 
 try:
     from django.test import TestCase
+    from django.core.exceptions import ValidationError
     from nautobot_intent_catalog.models import IntentSource
+    from nautobot_intent_catalog.tests.factories import make_desired_compute_instance
 except ImportError:
     pass
 else:
@@ -98,3 +100,73 @@ else:
             result = apply_batch(document).as_dict()
             self.assertEqual(result["transaction"]["status"], "rolled_back")
             self.assertFalse(IntentSource.objects.filter(slug="rollback-source").exists())
+
+        def test_compute_instance_desired_presence_defaults_to_present(self):
+            instance = make_desired_compute_instance()
+            self.assertEqual(instance.desired_presence, "present")
+
+        def test_atomic_retire_and_absent_batch_commits(self):
+            instance = make_desired_compute_instance()
+            node = instance.desired_node
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {
+                        "op": "upsert",
+                        "kind": "desired_compute_instance",
+                        "key": {"desired_node": node.slug},
+                        "values": {"desired_presence": "absent"},
+                    },
+                    {
+                        "op": "upsert",
+                        "kind": "desired_node",
+                        "key": {"slug": node.slug},
+                        "values": {"lifecycle": "retired"},
+                    },
+                ],
+            }
+            result = apply_batch(document).as_dict()
+            instance.refresh_from_db()
+            node.refresh_from_db()
+            self.assertEqual(result["transaction"]["status"], "committed")
+            self.assertEqual(node.lifecycle, "retired")
+            self.assertEqual(instance.desired_presence, "absent")
+
+        def test_absent_without_retirement_rolls_back(self):
+            instance = make_desired_compute_instance()
+            node = instance.desired_node
+            result = apply_batch(
+                {
+                    "dry_run": False,
+                    "operations": [
+                        {
+                            "op": "upsert",
+                            "kind": "desired_compute_instance",
+                            "key": {"desired_node": node.slug},
+                            "values": {"desired_presence": "absent"},
+                        }
+                    ],
+                }
+            ).as_dict()
+            instance.refresh_from_db()
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertEqual(instance.desired_presence, "present")
+            self.assertIn("desired_presence", result["transaction"]["error"])
+
+        def test_unknown_desired_presence_is_an_ordinary_validation_error(self):
+            instance = make_desired_compute_instance()
+            instance.desired_presence = "unknown"
+            with self.assertRaises(ValidationError) as ctx:
+                instance.full_clean()
+            self.assertIn("desired_presence", ctx.exception.message_dict)
+
+        def test_absent_rejects_every_non_retired_effective_lifecycle(self):
+            instance = make_desired_compute_instance()
+            for lifecycle in ("active", "approved", "planned", "deprecated"):
+                with self.subTest(lifecycle=lifecycle):
+                    instance.desired_node.lifecycle = lifecycle
+                    instance.platform.lifecycle = lifecycle
+                    instance.desired_presence = "absent"
+                    with self.assertRaises(ValidationError) as ctx:
+                        instance.full_clean()
+                    self.assertIn("desired_presence", ctx.exception.message_dict)
