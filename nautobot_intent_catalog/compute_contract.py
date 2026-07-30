@@ -26,6 +26,10 @@ POWER_STATE_RUNNING = "running"
 POWER_STATE_STOPPED = "stopped"
 POWER_STATE_CHOICES = (POWER_STATE_RUNNING, POWER_STATE_STOPPED)
 
+DESIRED_PRESENCE_PRESENT = "present"
+DESIRED_PRESENCE_ABSENT = "absent"
+DESIRED_PRESENCE_CHOICES = (DESIRED_PRESENCE_PRESENT, DESIRED_PRESENCE_ABSENT)
+
 LIFECYCLE_PLANNED = "planned"
 LIFECYCLE_APPROVED = "approved"
 LIFECYCLE_ACTIVE = "active"
@@ -104,6 +108,16 @@ def validate_power_state(value: Any, *, path: str = "desired_power_state") -> st
     if value not in POWER_STATE_CHOICES:
         raise ComputeContractError(
             "invalid_power_state", f"must be one of {', '.join(POWER_STATE_CHOICES)}", path=path
+        )
+    return value
+
+
+def validate_desired_presence(value: Any, *, path: str = "desired_presence") -> str:
+    if value not in DESIRED_PRESENCE_CHOICES:
+        raise ComputeContractError(
+            "invalid_desired_presence",
+            f"must be one of {', '.join(DESIRED_PRESENCE_CHOICES)}",
+            path=path,
         )
     return value
 
@@ -385,6 +399,16 @@ def is_actionable_lifecycle(effective: str) -> bool:
     """`active`/`approved` require a complete static-create contract; the rest do not."""
 
     return effective in (LIFECYCLE_ACTIVE, LIFECYCLE_APPROVED)
+
+
+def desired_presence_requires_retired(presence: str, effective: str) -> bool:
+    """Return whether a desired presence is permitted by its effective lifecycle.
+
+    Explicit absence is valid only for retired intent. Retired intent may still
+    retain ordinary present intent, so this is deliberately not the converse.
+    """
+
+    return presence != DESIRED_PRESENCE_ABSENT or effective == LIFECYCLE_RETIRED
 
 
 def effective_value(*, instance_value: Any, platform_value: Any) -> dict:

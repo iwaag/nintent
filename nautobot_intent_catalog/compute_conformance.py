@@ -12,7 +12,7 @@ CONFORMANCE_SCHEMA = "compute-conformance/v1"
 
 CONSTANTS = (
     "PROVIDER_TYPE_CHOICES", "CONFIG_SCHEMA_VERSION_V1", "INSTANCE_KIND_CHOICES",
-    "POWER_STATE_CHOICES", "LIFECYCLE_CHOICES", "LINK_SOURCE_CHOICES", "VCPUS_MIN",
+    "POWER_STATE_CHOICES", "DESIRED_PRESENCE_CHOICES", "LIFECYCLE_CHOICES", "LINK_SOURCE_CHOICES", "VCPUS_MIN",
     "VCPUS_MAX", "MEMORY_MB_MIN", "MEMORY_MB_MAX", "ROOT_DISK_GB_MIN",
     "ROOT_DISK_GB_MAX", "VMID_MIN", "VMID_MAX", "PROVENANCE_INSTANCE_OVERRIDE",
     "PROVENANCE_PLATFORM_DEFAULT", "PROVENANCE_UNRESOLVED", "PROVENANCE_INTENT",
@@ -21,12 +21,12 @@ CONSTANTS = (
 
 PUBLIC_SYMBOLS = (
     "ComputeContractError", "validate_provider_type", "validate_compute_lifecycle",
-    "validate_instance_kind", "validate_power_state", "validate_link_source",
+    "validate_instance_kind", "validate_power_state", "validate_desired_presence", "validate_link_source",
     "link_source_pairing_is_valid", "validate_config_schema_version", "validate_platform_config",
     "validate_instance_config", "validate_vmid", "validate_vcpus", "validate_memory_mb",
     "validate_root_disk_gb", "normalize_mac_address", "endpoint_has_usable_ip",
     "static_ipv4_network", "endpoint_satisfies_compute_address_contract", "select_compute_primary_endpoint",
-    "effective_lifecycle", "is_actionable_lifecycle", "effective_value",
+    "effective_lifecycle", "is_actionable_lifecycle", "desired_presence_requires_retired", "effective_value",
     "effective_single_source_value",
 )
 
@@ -45,6 +45,8 @@ CASES: tuple[dict[str, Any], ...] = (
     {"id": "kind-bad", "rule": "validate_instance_kind", "input": {"value": "bad"}},
     {"id": "power-ok", "rule": "validate_power_state", "input": {"value": "running"}},
     {"id": "power-bad", "rule": "validate_power_state", "input": {"value": "paused"}},
+    {"id": "presence-ok", "rule": "validate_desired_presence", "input": {"value": "present"}},
+    {"id": "presence-bad", "rule": "validate_desired_presence", "input": {"value": "unknown"}},
     {"id": "source-ok", "rule": "validate_link_source", "input": {"value": "derived"}},
     {"id": "source-bad", "rule": "validate_link_source", "input": {"value": "manual"}},
     {"id": "pair-ok", "rule": "link_source_pairing_is_valid", "input": {"link_present": True, "source": "derived"}},
@@ -88,6 +90,14 @@ CASES: tuple[dict[str, Any], ...] = (
 ) + tuple(
     {"id": f"effective-{node}-{platform}", "rule": "effective_lifecycle", "input": {"node": node, "platform": platform}}
     for node in contract.LIFECYCLE_CHOICES for platform in contract.LIFECYCLE_CHOICES
+) + tuple(
+    {
+        "id": f"presence-{presence}-{lifecycle}",
+        "rule": "desired_presence_requires_retired",
+        "input": {"presence": presence, "effective": lifecycle},
+    }
+    for presence in contract.DESIRED_PRESENCE_CHOICES
+    for lifecycle in contract.LIFECYCLE_CHOICES
 )
 
 
@@ -117,6 +127,8 @@ def _run(case: dict[str, Any]) -> Any:
         return contract.effective_single_source_value(**data)
     if rule == "is_actionable_lifecycle":
         return contract.is_actionable_lifecycle(data["value"])
+    if rule == "desired_presence_requires_retired":
+        return contract.desired_presence_requires_retired(data["presence"], data["effective"])
     return getattr(contract, rule)(data["value"])
 
 

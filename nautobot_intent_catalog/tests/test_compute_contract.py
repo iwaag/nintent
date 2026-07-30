@@ -8,6 +8,7 @@ from nautobot_intent_catalog.compute_contract import (
     ComputeContractError,
     endpoint_has_usable_ip,
     endpoint_satisfies_compute_address_contract,
+    desired_presence_requires_retired,
     effective_lifecycle,
     effective_single_source_value,
     effective_value,
@@ -23,6 +24,7 @@ from nautobot_intent_catalog.compute_contract import (
     validate_memory_mb,
     validate_platform_config,
     validate_power_state,
+    validate_desired_presence,
     validate_provider_type,
     validate_root_disk_gb,
     validate_vcpus,
@@ -47,6 +49,23 @@ class ProviderTypeTests(unittest.TestCase):
     def test_rejects_empty(self) -> None:
         with self.assertRaises(ComputeContractError):
             validate_provider_type("")
+
+
+class DesiredPresenceTests(unittest.TestCase):
+    def test_accepts_known_values(self) -> None:
+        self.assertEqual(validate_desired_presence("present"), "present")
+        self.assertEqual(validate_desired_presence("absent"), "absent")
+
+    def test_rejects_unknown_value(self) -> None:
+        with self.assertRaises(ComputeContractError) as ctx:
+            validate_desired_presence("unknown")
+        self.assertEqual(ctx.exception.code, "invalid_desired_presence")
+
+    def test_absence_requires_retired_effective_lifecycle(self) -> None:
+        for lifecycle in ("planned", "approved", "active", "deprecated"):
+            self.assertFalse(desired_presence_requires_retired("absent", lifecycle))
+        self.assertTrue(desired_presence_requires_retired("absent", "retired"))
+        self.assertTrue(desired_presence_requires_retired("present", "retired"))
 
 
 class ConfigSchemaVersionTests(unittest.TestCase):
