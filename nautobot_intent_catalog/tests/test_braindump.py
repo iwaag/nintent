@@ -18,8 +18,10 @@ try:
 
     from nautobot.core.testing import TestCase
     from nautobot.core.testing.api import APITestCase
+    from nautobot.dcim.models import Device
+    from nautobot.virtualization.models import VirtualMachine
 
-    from nautobot_intent_catalog.models import AlignmentReview, BrainDumpDocument
+    from nautobot_intent_catalog.models import AlignmentReview, BrainDumpDocument, DesiredNode
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
 else:
@@ -286,6 +288,65 @@ else:
             self.braindumps_url = reverse("plugins-api:nautobot_intent_catalog-api:braindumpdocument-list")
             self.reviews_url = reverse("plugins-api:nautobot_intent_catalog-api:alignmentreview-list")
             self.supersede_url = f"{self.braindumps_url}supersede/"
+
+        def _purge_url(self, braindump):
+            return f"{self.braindumps_url}{braindump.pk}/purge/"
+
+        def test_purge_plan_is_read_only_and_includes_review_presence(self):
+            braindump = _make_braindump()
+            braindump.status = BrainDumpDocument.STATUS_SUPERSEDED
+            braindump.save()
+            review = AlignmentReview.objects.create(braindump=braindump, summary="review")
+
+            response = self.client.post(self._purge_url(braindump), {}, format="json", **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["outcome"], "planned")
+            self.assertEqual(response.data["braindump"]["id"], str(braindump.pk))
+            self.assertTrue(response.data["alignment_review_present"])
+            self.assertTrue(BrainDumpDocument.objects.filter(pk=braindump.pk).exists())
+            self.assertTrue(AlignmentReview.objects.filter(pk=review.pk).exists())
+
+        def test_purge_deletes_only_superseded_target_and_its_review(self):
+            target = _make_braindump(title="Purge me")
+            target.status = BrainDumpDocument.STATUS_SUPERSEDED
+            target.save()
+            review = AlignmentReview.objects.create(braindump=target, summary="review")
+            untouched = _make_braindump(title="Keep me")
+            unaffected_counts = (DesiredNode.objects.count(), Device.objects.count(), VirtualMachine.objects.count())
+
+            response = self.client.delete(self._purge_url(target), **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["outcome"], "purged")
+            self.assertFalse(BrainDumpDocument.objects.filter(pk=target.pk).exists())
+            self.assertFalse(AlignmentReview.objects.filter(pk=review.pk).exists())
+            self.assertTrue(BrainDumpDocument.objects.filter(pk=untouched.pk).exists())
+            self.assertEqual(
+                (DesiredNode.objects.count(), Device.objects.count(), VirtualMachine.objects.count()),
+                unaffected_counts,
+            )
+
+        def test_purge_rejects_active_row_and_leaves_it_readable(self):
+            braindump = _make_braindump()
+
+            response = self.client.delete(self._purge_url(braindump), **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+            self.assertEqual(response.data["outcome"], "ineligible")
+            self.assertEqual(self.client.get(f"{self.braindumps_url}{braindump.pk}/", **self.header).status_code, status.HTTP_200_OK)
+
+        def test_repeated_purge_is_already_purged_no_op(self):
+            braindump = _make_braindump()
+            braindump.status = BrainDumpDocument.STATUS_SUPERSEDED
+            braindump.save()
+            url = self._purge_url(braindump)
+
+            self.assertEqual(self.client.delete(url, **self.header).data["outcome"], "purged")
+            repeated = self.client.delete(url, **self.header)
+
+            self.assertEqual(repeated.status_code, status.HTTP_200_OK)
+            self.assertEqual(repeated.data, {"outcome": "already_purged", "braindump_id": str(braindump.pk)})
 
         def test_supersede_creates_active_replacement_and_changes_exact_old_rows(self):
             first = _make_braindump(title="Old one")

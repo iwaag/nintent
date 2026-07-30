@@ -137,7 +137,14 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
     queryset = BrainDumpDocument.objects.select_related("alignment_review")
     serializer_class = BrainDumpDocumentSerializer
     filterset_class = BrainDumpDocumentFilterSet
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def destroy(self, request, *args, **kwargs):
+        """Keep generic document DELETE unavailable; only ``purge`` may delete."""
+        return HttpResponseNotAllowed(["GET", "POST", "HEAD", "OPTIONS"])
+
+    def bulk_destroy(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(["GET", "POST", "HEAD", "OPTIONS"])
 
     @action(detail=False, methods=["post"], url_path="supersede")
     def supersede(self, request, *args, **kwargs):
@@ -179,6 +186,44 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post", "delete"], url_path="purge")
+    def purge(self, request, *args, **kwargs):
+        """Plan or atomically delete one exact superseded Braindump.
+
+        This is deliberately separate from the immutable collection's ordinary
+        ``DELETE`` route.  POST is a read-only plan; DELETE is the sole
+        physical deletion path and treats a previously removed UUID as an
+        idempotent success.
+        """
+        braindump_id = kwargs["pk"]
+        with transaction.atomic():
+            document = (
+                BrainDumpDocument.objects.select_for_update()
+                .filter(pk=braindump_id)
+                .first()
+            )
+            if document is None:
+                return Response({"outcome": "already_purged", "braindump_id": str(braindump_id)})
+            if document.status != BrainDumpDocument.STATUS_SUPERSEDED:
+                return Response(
+                    {
+                        "outcome": "ineligible",
+                        "braindump_id": str(document.pk),
+                        "reason": "Braindump must have status=superseded.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            result = {
+                "outcome": "planned" if request.method == "POST" else "purged",
+                "braindump": BrainDumpDocumentSerializer(document, context={"request": request}).data,
+                "alignment_review_present": hasattr(document, "alignment_review"),
+            }
+            if request.method == "DELETE":
+                # The one-to-one review cascades with the document inside this transaction.
+                document.delete()
+            return Response(result)
 
 
 class AlignmentReviewViewSet(NautobotModelViewSet):
