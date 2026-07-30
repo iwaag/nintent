@@ -194,6 +194,8 @@ else:
         def test_atomic_retire_and_absent_batch_commits(self):
             instance = make_desired_compute_instance()
             node = instance.desired_node
+            original_platform_id = instance.platform_id
+            original_vcpus = instance.vcpus
             document = {
                 "dry_run": False,
                 "operations": [
@@ -211,12 +213,19 @@ else:
                     },
                 ],
             }
+            preview = plan_batch({**document, "dry_run": True}).as_dict()
+            self.assertEqual([item["action"] for item in preview["operations"]], ["update", "update"])
+            self.assertIn("platform", preview["operations"][0]["preserved_fields"])
+            self.assertIn("name", preview["operations"][1]["preserved_fields"])
+
             result = apply_batch(document).as_dict()
             instance.refresh_from_db()
             node.refresh_from_db()
             self.assertEqual(result["transaction"]["status"], "committed")
             self.assertEqual(node.lifecycle, "retired")
             self.assertEqual(instance.desired_presence, "absent")
+            self.assertEqual(instance.platform_id, original_platform_id)
+            self.assertEqual(instance.vcpus, original_vcpus)
 
         def test_absent_without_retirement_rolls_back(self):
             instance = make_desired_compute_instance()
