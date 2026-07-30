@@ -43,7 +43,10 @@ def _roots(payload: dict[str, Any]):
 
 def _collector(device, vm) -> Collector:
     collector = Collector(using=device._state.db)
-    collector.collect([device, vm])
+    # ``Collector.collect()`` treats a list as a homogeneous model sequence;
+    # Device and VirtualMachine must therefore be added as two roots.
+    collector.collect(device)
+    collector.collect(vm)
     return collector
 
 
