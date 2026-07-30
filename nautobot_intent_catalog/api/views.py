@@ -15,6 +15,7 @@ from nautobot.core.api.serializers import BulkOperationSerializer
 
 from .. import models
 from ..batch import BatchValidationError, apply_batch, decode_batch, plan_batch
+from ..operations.retirement_prune import RetirementPruneError, delete as delete_retirement_actual, plan as plan_retirement_actual
 from ..filters import (
     AlignmentReviewFilterSet,
     BrainDumpDocumentFilterSet,
@@ -104,6 +105,30 @@ class DesiredStateBatchView(APIView):
             )
         if not request.user.has_perms(permissions):
             raise PermissionDenied("Missing required desired-state model permission.")
+
+
+class RetirementActualPruneView(APIView):
+    """Plan or delete only the Actual cascade rooted in a retired LXC's links."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.has_perms(("nautobot_intent_catalog.view_desirednode", "dcim.delete_device", "virtualization.delete_virtualmachine")):
+            raise PermissionDenied("Missing required retirement-prune permission.")
+        try:
+            result = plan_retirement_actual(dict(request.data))
+        except RetirementPruneError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(result)
+
+    def delete(self, request):
+        if not request.user.has_perms(("nautobot_intent_catalog.view_desirednode", "dcim.delete_device", "virtualization.delete_virtualmachine")):
+            raise PermissionDenied("Missing required retirement-prune permission.")
+        try:
+            result = delete_retirement_actual(dict(request.data))
+        except RetirementPruneError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(result)
 
 
 class BrainDumpDocumentViewSet(NautobotModelViewSet):

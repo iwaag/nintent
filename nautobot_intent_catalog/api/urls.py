@@ -11,4 +11,5 @@ router.register("alignment-reviews", views.AlignmentReviewViewSet)
 
 urlpatterns = [
     path("desired-state/batch/", views.DesiredStateBatchView.as_view(), name="desired-state-batch"),
+    path("retirement-prune/actual/", views.RetirementActualPruneView.as_view(), name="retirement-prune-actual"),
 ] + router.urls
