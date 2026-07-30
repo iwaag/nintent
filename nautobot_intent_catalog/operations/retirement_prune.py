@@ -21,22 +21,32 @@ def _roots(payload: dict[str, Any]):
     from ..models import DesiredComputeInstance, DesiredNode
 
     required = ("desired_node_id", "device_id", "virtual_machine_id")
-    if set(payload) != set(required) or any(not isinstance(payload[name], str) or not payload[name] for name in required):
-        raise RetirementPruneError("payload must contain exactly desired_node_id, device_id, and virtual_machine_id")
+    if set(payload) != set(required) or not isinstance(payload["desired_node_id"], str) or not payload["desired_node_id"]:
+        raise RetirementPruneError("payload must contain desired_node_id and optional device_id/virtual_machine_id roots")
+    if any(payload[name] is not None and (not isinstance(payload[name], str) or not payload[name]) for name in ("device_id", "virtual_machine_id")):
+        raise RetirementPruneError("Actual root ids must be non-empty strings or null")
     node = DesiredNode.objects.filter(pk=payload["desired_node_id"]).first()
     instances = list(DesiredComputeInstance.objects.filter(desired_node=node)) if node else []
     instance = instances[0] if len(instances) == 1 else None
-    device = Device.objects.filter(pk=payload["device_id"]).first()
-    vm = VirtualMachine.objects.select_related("cluster").filter(pk=payload["virtual_machine_id"]).first()
-    if not node or not instance or not device or not vm:
-        raise RetirementPruneError("one or more selected retirement records no longer exist")
+    device = Device.objects.filter(pk=payload["device_id"]).first() if payload["device_id"] else None
+    vm = VirtualMachine.objects.select_related("cluster").filter(pk=payload["virtual_machine_id"]).first() if payload["virtual_machine_id"] else None
+    if not node or not instance:
+        raise RetirementPruneError("selected Desired retirement records no longer exist")
     if node.lifecycle != "retired" or instance.desired_presence != "absent":
         raise RetirementPruneError("selected Desired records are not retired with desired_presence=absent")
-    if str(node.realized_device_id) != str(device.pk) or str(instance.realized_vm_id) != str(vm.pk):
-        raise RetirementPruneError("selected Actual roots no longer match the Desired links")
-    vm_facts = vm._custom_field_data or {}
-    cluster_facts = (vm.cluster._custom_field_data or {}) if vm.cluster else {}
-    if vm_facts.get("proxmox_presence") != "absent" or cluster_facts.get("proxmox_observation_state") != "complete":
+    if device and str(node.realized_device_id) != str(device.pk):
+        raise RetirementPruneError("selected Device no longer matches the Desired link")
+    if vm and str(instance.realized_vm_id) != str(vm.pk):
+        raise RetirementPruneError("selected VirtualMachine no longer matches the Desired link")
+    if not device and node.realized_device_id and Device.objects.filter(pk=node.realized_device_id).exists():
+        raise RetirementPruneError("linked Device exists but was omitted from the Actual cleanup plan")
+    if not vm and instance.realized_vm_id and VirtualMachine.objects.filter(pk=instance.realized_vm_id).exists():
+        raise RetirementPruneError("linked VirtualMachine exists but was omitted from the Actual cleanup plan")
+    if not device and not vm:
+        raise RetirementPruneError("no surviving Actual root is available for cleanup")
+    vm_facts = vm._custom_field_data or {} if vm else {}
+    cluster_facts = (vm.cluster._custom_field_data or {}) if vm and vm.cluster else {}
+    if vm and (vm_facts.get("proxmox_presence") != "absent" or cluster_facts.get("proxmox_observation_state") != "complete"):
         raise RetirementPruneError("selected VM is not confirmed absent by a complete Proxmox observation")
     return node, instance, device, vm
 
@@ -46,11 +56,14 @@ def _collector(device, vm) -> Collector:
     from nautobot.ipam.models import IPAddress
     from nautobot.virtualization.models import VMInterface
 
-    collector = Collector(using=device._state.db)
+    root = device or vm
+    collector = Collector(using=root._state.db)
     # ``Collector.collect()`` treats a list as a homogeneous model sequence;
     # Device and VirtualMachine must therefore be added as two roots.
-    collector.collect([device])
-    collector.collect([vm])
+    if device:
+        collector.collect([device])
+    if vm:
+        collector.collect([vm])
     selected_interfaces = {str(item.pk) for item in collector.data.get(Interface, set())}
     selected_vm_interfaces = {str(item.pk) for item in collector.data.get(VMInterface, set())}
     candidates = IPAddress.objects.filter(
@@ -87,7 +100,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
         raise RetirementPruneError(f"Actual deletion is blocked: {exc}") from exc
     return {
         "desired": {"node_id": str(node.pk), "compute_instance_id": str(instance.pk)},
-        "actual_roots": {"device_id": str(device.pk), "virtual_machine_id": str(vm.pk)},
+        "actual_roots": {"device_id": str(device.pk) if device else None, "virtual_machine_id": str(vm.pk) if vm else None},
         "records": records,
     }
 
