@@ -68,6 +68,53 @@ except ImportError:
     pass
 else:
     class BatchRuntimeTests(TestCase):
+        def _active_lxc_document(self, *, mac_address="02:00:00:00:00:01"):
+            platform = make_desired_compute_platform(
+                lifecycle="active",
+                config={"default_storage": "local-lvm", "default_bridge": "vmbr0"},
+            )
+            endpoint_values = {
+                "ip_policy": "static",
+                "ip_address": "192.0.2.101/24",
+                "gateway_address": "192.0.2.1",
+                "mdns_name": "batch-lxc.local",
+            }
+            if mac_address is not None:
+                endpoint_values["mac_address"] = mac_address
+            return {
+                "dry_run": False,
+                "operations": [
+                    {"op": "upsert", "kind": "desired_node", "key": {"slug": "batch-lxc"},
+                     "values": {"name": "batch-lxc", "node_type": "container", "lifecycle": "active"}},
+                    {"op": "upsert", "kind": "desired_endpoint",
+                     "key": {"desired_node": "batch-lxc", "name": "primary", "endpoint_type": "primary"},
+                     "values": endpoint_values},
+                    {"op": "upsert", "kind": "desired_compute_instance", "key": {"desired_node": "batch-lxc"},
+                     "values": {"platform": platform.slug, "instance_kind": "container", "desired_power_state": "running",
+                                "vcpus": 1, "memory_mb": 512, "root_disk_gb": 8,
+                                "config": {"vmid": 101, "template": "local:vztmpl/example.tar.zst", "unprivileged": True}}},
+                ],
+            }
+
+        def test_active_lxc_without_mac_rolls_back_with_primary_endpoint_reason(self):
+            result = apply_batch(self._active_lxc_document(mac_address=None)).as_dict()
+
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("compute_primary_endpoint_missing", result["transaction"]["error"])
+            self.assertFalse(DesiredNode.objects.filter(slug="batch-lxc").exists())
+            self.assertFalse(DesiredEndpoint.objects.filter(name="primary", mdns_name="batch-lxc.local").exists())
+            self.assertFalse(DesiredComputeInstance.objects.filter(config__vmid=101).exists())
+
+        def test_active_lxc_with_mac_commits_all_three_rows_atomically(self):
+            result = apply_batch(self._active_lxc_document()).as_dict()
+
+            self.assertEqual(result["transaction"]["status"], "committed")
+            node = DesiredNode.objects.get(slug="batch-lxc")
+            endpoint = DesiredEndpoint.objects.get(desired_node=node, name="primary")
+            instance = DesiredComputeInstance.objects.get(desired_node=node)
+            self.assertEqual(endpoint.mac_address, "02:00:00:00:00:01")
+            self.assertEqual(instance.config["vmid"], 101)
+
         def test_dry_run_does_not_write_and_apply_creates_one_row(self):
             document = {"dry_run": True, "operations": [
                 {"op": "upsert", "kind": "intent_source", "key": {"slug": "batch-source"}, "values": {}},
