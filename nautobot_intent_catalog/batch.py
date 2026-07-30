@@ -118,7 +118,7 @@ def plan_batch(document: dict[str, Any]) -> BatchResult:
     except (ImportError, AttributeError):
         models = None
     deleted_pks = _planned_delete_pks(operations, models) if models else {}
-    planned_keys = {(operation.kind, _identity_key(operation.key)) for operation in operations if operation.op == "upsert"}
+    references = _PlannedReferenceResolver(operations, models) if models else None
     for operation in operations:
         if models is None:
             action, reason = ("unchanged", None) if operation.op == "delete" else ("conflict", "Django is not configured")
@@ -126,13 +126,10 @@ def plan_batch(document: dict[str, Any]) -> BatchResult:
             continue
         model = models[operation.kind]
         try:
-            try:
-                row = _find(model, operation.kind, operation.key)
-            except BatchValidationError:
-                if _references_are_planned(operation, planned_keys):
-                    row = None
-                else:
-                    raise
+            missing_reference = references.missing_reference(operation)
+            if missing_reference is not None:
+                raise BatchValidationError(f"unresolved {missing_reference[0]} reference: {missing_reference[1]!r}")
+            row = _find(model, operation.kind, operation.key) if references.identity_exists(operation) else None
             if operation.op == "delete":
                 blockers = _delete_blockers(operation.kind, row, deleted_pks) if row else []
                 result.operations.append(_planned(operation, "conflict" if blockers else ("delete" if row else "unchanged"),
@@ -311,12 +308,44 @@ def _identity_key(key: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted((name, repr(value)) for name, value in key.items()))
 
 
-def _references_are_planned(operation: Operation, planned_keys: set[tuple[str, tuple[tuple[str, str], ...]]]) -> bool:
-    for name, value in {**operation.key, **operation.values}.items():
-        target_kind = _REFERENCE_KIND.get(name)
-        if target_kind is None or value is None:
-            continue
-        reference = value if isinstance(value, dict) else {"slug": value}
-        if (target_kind, _identity_key(reference)) not in planned_keys:
-            return False
-    return True
+class _PlannedReferenceResolver:
+    """Resolve each planning reference against rows or ordered batch identities."""
+
+    def __init__(self, operations: list[Operation], models: dict[str, Any]):
+        self.models = models
+        self.upserts = {
+            (operation.kind, _identity_key(operation.key))
+            for operation in operations
+            if operation.op == "upsert"
+        }
+
+    def missing_reference(self, operation: Operation) -> tuple[str, Any] | None:
+        for name, value in {**operation.key, **operation.values}.items():
+            target_kind = _REFERENCE_KIND.get(name)
+            if target_kind is None or value is None:
+                continue
+            reference = _reference_identity(target_kind, value)
+            if _find(self.models[target_kind], target_kind, reference) is not None:
+                continue
+            if ((target_kind, _identity_key(reference)) in self.upserts
+                    and KIND_ORDER.index(target_kind) < KIND_ORDER.index(operation.kind)):
+                continue
+            return name, value
+        return None
+
+    def identity_exists(self, operation: Operation) -> bool:
+        """Whether every relationship in an operation identity is already queryable."""
+        for name, value in operation.key.items():
+            target_kind = _REFERENCE_KIND.get(name)
+            if target_kind is not None and value is not None:
+                if _find(self.models[target_kind], target_kind, _reference_identity(target_kind, value)) is None:
+                    return False
+        return True
+
+
+def _reference_identity(target_kind: str, value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if _KEYS[target_kind] != ("slug",):
+        raise BatchValidationError(f"reference for {target_kind} must use its full identity")
+    return {"slug": value}

@@ -62,8 +62,8 @@ class BatchDecodeTests(unittest.TestCase):
 try:
     from django.test import TestCase
     from django.core.exceptions import ValidationError
-    from nautobot_intent_catalog.models import IntentSource
-    from nautobot_intent_catalog.tests.factories import make_desired_compute_instance
+    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, IntentSource
+    from nautobot_intent_catalog.tests.factories import make_desired_compute_instance, make_desired_compute_platform
 except ImportError:
     pass
 else:
@@ -90,6 +90,45 @@ else:
             result = apply_batch(document).as_dict()
             self.assertTrue(result["transaction"]["committed"])
             self.assertEqual(result["totals"]["create"], 2)
+
+        def test_preview_and_apply_resolve_mixed_existing_and_batch_references(self):
+            platform = make_desired_compute_platform()
+            document = {"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_node", "key": {"slug": "mixed-node"},
+                 "values": {"name": "mixed-node", "node_type": "container", "lifecycle": "planned"}},
+                {"op": "upsert", "kind": "desired_endpoint",
+                 "key": {"desired_node": "mixed-node", "name": "primary", "endpoint_type": "primary"},
+                 "values": {"ip_policy": "external"}},
+                {"op": "upsert", "kind": "desired_compute_instance", "key": {"desired_node": "mixed-node"},
+                 "values": {"platform": platform.slug, "instance_kind": "container", "vcpus": 1,
+                            "memory_mb": 512, "root_disk_gb": 8,
+                            "config": {"template": "local:vztmpl/example.tar.zst", "unprivileged": True}}},
+            ]}
+            preview = plan_batch(document).as_dict()
+            self.assertEqual(preview["totals"]["create"], 3)
+            self.assertEqual(preview["totals"]["conflict"], 0)
+            self.assertFalse(DesiredNode.objects.filter(slug="mixed-node").exists())
+
+            result = apply_batch({**document, "dry_run": False}).as_dict()
+            self.assertTrue(result["transaction"]["committed"])
+            node = DesiredNode.objects.get(slug="mixed-node")
+            self.assertTrue(DesiredEndpoint.objects.filter(desired_node=node, name="primary").exists())
+            self.assertTrue(DesiredComputeInstance.objects.filter(desired_node=node, platform=platform).exists())
+
+        def test_missing_references_remain_individual_conflicts(self):
+            node = DesiredNode.objects.create(name="existing-node", slug="existing-node", lifecycle="planned")
+            document = {"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_compute_instance", "key": {"desired_node": "missing-node"},
+                 "values": {"platform": "missing-platform", "instance_kind": "container", "vcpus": 1,
+                            "memory_mb": 512, "root_disk_gb": 8, "config": {}}},
+                {"op": "upsert", "kind": "desired_compute_instance", "key": {"desired_node": node.slug},
+                 "values": {"platform": "missing-platform", "instance_kind": "container", "vcpus": 1,
+                            "memory_mb": 512, "root_disk_gb": 8, "config": {}}},
+            ]}
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["totals"]["conflict"], 2)
+            self.assertIn("unresolved desired_node reference: 'missing-node'", result["operations"][0]["reason"])
+            self.assertIn("unresolved platform reference: 'missing-platform'", result["operations"][1]["reason"])
 
         def test_apply_rolls_back_everything_when_full_clean_fails(self):
             document = {"dry_run": False, "operations": [
