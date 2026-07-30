@@ -137,14 +137,7 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
     queryset = BrainDumpDocument.objects.select_related("alignment_review")
     serializer_class = BrainDumpDocumentSerializer
     filterset_class = BrainDumpDocumentFilterSet
-    http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def destroy(self, request, *args, **kwargs):
-        """Keep generic document DELETE unavailable; only ``purge`` may delete."""
-        return HttpResponseNotAllowed(["GET", "POST", "HEAD", "OPTIONS"])
-
-    def bulk_destroy(self, request, *args, **kwargs):
-        return HttpResponseNotAllowed(["GET", "POST", "HEAD", "OPTIONS"])
+    http_method_names = ["get", "post", "head", "options"]
 
     @action(detail=False, methods=["post"], url_path="supersede")
     def supersede(self, request, *args, **kwargs):
@@ -187,16 +180,19 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=True, methods=["post", "delete"], url_path="purge")
-    def purge(self, request, *args, **kwargs):
-        """Plan or atomically delete one exact superseded Braindump.
+class BraindumpPurgeView(APIView):
+    """Plan or immediately delete one exact superseded Braindump."""
 
-        This is deliberately separate from the immutable collection's ordinary
-        ``DELETE`` route.  POST is a read-only plan; DELETE is the sole
-        physical deletion path and treats a previously removed UUID as an
-        idempotent success.
-        """
-        braindump_id = kwargs["pk"]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, braindump_id):
+        return self._run(request, braindump_id, apply=False)
+
+    def delete(self, request, braindump_id):
+        return self._run(request, braindump_id, apply=True)
+
+    @staticmethod
+    def _run(request, braindump_id, *, apply):
         with transaction.atomic():
             document = (
                 BrainDumpDocument.objects.select_for_update()
@@ -216,11 +212,11 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
                 )
 
             result = {
-                "outcome": "planned" if request.method == "POST" else "purged",
+                "outcome": "purged" if apply else "planned",
                 "braindump": BrainDumpDocumentSerializer(document, context={"request": request}).data,
                 "alignment_review_present": hasattr(document, "alignment_review"),
             }
-            if request.method == "DELETE":
+            if apply:
                 # The one-to-one review cascades with the document inside this transaction.
                 document.delete()
             return Response(result)
