@@ -42,11 +42,27 @@ def _roots(payload: dict[str, Any]):
 
 
 def _collector(device, vm) -> Collector:
+    from nautobot.dcim.models import Interface
+    from nautobot.ipam.models import IPAddress
+    from nautobot.virtualization.models import VMInterface
+
     collector = Collector(using=device._state.db)
     # ``Collector.collect()`` treats a list as a homogeneous model sequence;
     # Device and VirtualMachine must therefore be added as two roots.
     collector.collect([device])
     collector.collect([vm])
+    selected_interfaces = {str(item.pk) for item in collector.data.get(Interface, set())}
+    selected_vm_interfaces = {str(item.pk) for item in collector.data.get(VMInterface, set())}
+    candidates = IPAddress.objects.filter(
+        vm_interfaces__pk__in=selected_vm_interfaces
+    ) | IPAddress.objects.filter(interfaces__pk__in=selected_interfaces)
+    for address in candidates.distinct():
+        interface_ids = {str(pk) for pk in address.interfaces.values_list("pk", flat=True)}
+        vm_interface_ids = {str(pk) for pk in address.vm_interfaces.values_list("pk", flat=True)}
+        # Only delete an IP if every attachment belongs to this exact collector
+        # set. Shared IPs stay outside the prune set.
+        if interface_ids <= selected_interfaces and vm_interface_ids <= selected_vm_interfaces:
+            collector.collect([address])
     return collector
 
 
