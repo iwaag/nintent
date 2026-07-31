@@ -45,6 +45,24 @@ class BatchDecodeTests(unittest.TestCase):
                      "values": {"name": "example-service", "slug": "example-service"}},
                 ]})
 
+    def test_desired_service_binding_envelope_accepts_dict_identity_and_rejects_unknown_fields(self):
+        dry_run, operations = decode_batch({"dry_run": True, "operations": [
+            {"op": "upsert", "kind": "desired_service_binding",
+             "key": {"consumer_placement": {"desired_service": "node-agent", "instance_name": "aghub"},
+                      "binding_name": "llm_provider"},
+             "values": {"provider_service": "ollama"}},
+        ]})
+        self.assertTrue(dry_run)
+        self.assertEqual(operations[0].values, {"provider_service": "ollama"})
+
+        with self.assertRaises(BatchValidationError):
+            decode_batch({"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_service_binding",
+                 "key": {"consumer_placement": {"desired_service": "node-agent", "instance_name": "aghub"},
+                          "binding_name": "llm_provider"},
+                 "values": {"resolution_status": "resolved"}},
+            ]})
+
     def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
         class Query:
             def __init__(self, value):
@@ -74,8 +92,14 @@ class BatchDecodeTests(unittest.TestCase):
 try:
     from django.test import TestCase
     from django.core.exceptions import ValidationError
-    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode
-    from nautobot_intent_catalog.tests.factories import make_desired_compute_instance, make_desired_compute_platform
+    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement
+    from nautobot_intent_catalog.tests.factories import (
+        make_desired_compute_instance,
+        make_desired_compute_platform,
+        make_desired_service,
+        make_desired_service_binding,
+        make_desired_service_placement,
+    )
 except ImportError:
     pass
 else:
@@ -278,3 +302,88 @@ else:
                     with self.assertRaises(ValidationError) as ctx:
                         instance.full_clean()
                     self.assertIn("desired_presence", ctx.exception.message_dict)
+
+    class ServiceBindingPerRowValidationTests(TestCase):
+        """Step 2 per-row checks: idea-A section 4.7 binding-name declaration, old-key refusal."""
+
+        def test_declared_binding_name_on_node_agent_profile_saves(self):
+            binding = make_desired_service_binding()
+            self.assertEqual(binding.binding_name, "llm_provider")
+
+        def test_undeclared_binding_name_is_rejected(self):
+            placement = make_desired_service_placement(deployment_profile="node_agent")
+            binding = DesiredServiceBinding(
+                consumer_placement=placement, binding_name="not-declared", provider_service=make_desired_service()
+            )
+            with self.assertRaises(ValidationError) as ctx:
+                binding.full_clean()
+            self.assertIn("binding_name", ctx.exception.message_dict)
+
+        def test_binding_name_declared_for_node_agent_is_rejected_on_a_profile_without_it(self):
+            placement = make_desired_service_placement(deployment_profile="default")
+            binding = DesiredServiceBinding(
+                consumer_placement=placement, binding_name="llm_provider", provider_service=make_desired_service()
+            )
+            with self.assertRaises(ValidationError) as ctx:
+                binding.full_clean()
+            self.assertIn("binding_name", ctx.exception.message_dict)
+
+        def test_node_agent_placement_config_refuses_the_old_key(self):
+            placement = DesiredServicePlacement(
+                desired_service=make_desired_service(),
+                desired_node=make_desired_service_placement(deployment_profile="node_agent").desired_node,
+                instance_name="second-instance",
+                deployment_profile="node_agent",
+                config_schema_version="1",
+                config={"llm_provider_service": "ollama"},
+            )
+            with self.assertRaises(ValidationError) as ctx:
+                placement.full_clean()
+            self.assertIn("config", ctx.exception.message_dict)
+            self.assertIn("llm_provider_service", ctx.exception.message_dict["config"][0])
+
+        def test_node_agent_placement_config_without_the_old_key_saves(self):
+            placement = make_desired_service_placement(deployment_profile="node_agent", config={"other_key": "value"})
+            self.assertEqual(placement.config, {"other_key": "value"})
+
+        def test_apply_batch_creates_a_binding_via_the_batch_endpoint(self):
+            placement = make_desired_service_placement(deployment_profile="node_agent")
+            service = make_desired_service()
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {
+                        "op": "upsert",
+                        "kind": "desired_service_binding",
+                        "key": {
+                            "consumer_placement": {
+                                "desired_service": placement.desired_service.slug,
+                                "instance_name": placement.instance_name,
+                            },
+                            "binding_name": "llm_provider",
+                        },
+                        "values": {"provider_service": service.slug},
+                    },
+                ],
+            }
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "committed")
+            binding = DesiredServiceBinding.objects.get(consumer_placement=placement, binding_name="llm_provider")
+            self.assertEqual(binding.provider_service_id, service.pk)
+
+        def test_apply_batch_rejects_reintroducing_the_old_config_key(self):
+            placement = make_desired_service_placement(deployment_profile="node_agent")
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {
+                        "op": "upsert",
+                        "kind": "desired_service_placement",
+                        "key": {"desired_service": placement.desired_service.slug, "instance_name": placement.instance_name},
+                        "values": {"config": {"llm_provider_service": "ollama"}},
+                    },
+                ],
+            }
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("llm_provider_service", result["transaction"]["error"])

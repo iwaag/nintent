@@ -10,7 +10,7 @@ SCHEMA_VERSION = "nintent.desired-state-batch.v1"
 KIND_ORDER = (
     "desired_node", "desired_ip_range", "desired_endpoint",
     "desired_compute_platform", "desired_compute_instance", "desired_service",
-    "desired_service_placement", "desired_node_operational_override",
+    "desired_service_placement", "desired_service_binding", "desired_node_operational_override",
 )
 
 
@@ -48,6 +48,7 @@ _KEYS = {
     "desired_compute_platform": ("slug",), "desired_compute_instance": ("desired_node",),
     "desired_service": ("slug",),
     "desired_service_placement": ("desired_service", "instance_name"),
+    "desired_service_binding": ("consumer_placement", "binding_name"),
     "desired_node_operational_override": ("desired_node",),
 }
 
@@ -59,6 +60,7 @@ _FIELDS = {
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "desired_presence", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
     "desired_service": {"name", "slug", "lifecycle"},
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
+    "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node", "declared_host_os", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
 }
 
@@ -70,6 +72,7 @@ _CREATE_REQUIRED = {
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "vcpus", "memory_mb", "root_disk_gb", "config"},
     "desired_service": {"name", "slug"},
     "desired_service_placement": {"desired_service", "desired_node", "instance_name", "deployment_profile", "config_schema_version", "config"},
+    "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node"},
 }
 
@@ -200,6 +203,7 @@ def _models() -> dict[str, Any]:
             "desired_compute_platform": models.DesiredComputePlatform, "desired_compute_instance": models.DesiredComputeInstance,
             "desired_service": models.DesiredService,
             "desired_service_placement": models.DesiredServicePlacement,
+            "desired_service_binding": models.DesiredServiceBinding,
             "desired_node_operational_override": models.DesiredNodeOperationalOverride}
 
 
@@ -213,7 +217,8 @@ _ACTUAL_REFERENCE_MODELS = {
 
 _REFERENCE_KIND = {"desired_node": "desired_node", "control_node": "desired_node", "platform": "desired_compute_platform",
                    "desired_service": "desired_service", "desired_endpoint": "desired_endpoint",
-                   "local_endpoint": "desired_endpoint", "tailscale_endpoint": "desired_endpoint"}
+                   "local_endpoint": "desired_endpoint", "tailscale_endpoint": "desired_endpoint",
+                   "consumer_placement": "desired_service_placement", "provider_service": "desired_service"}
 
 
 def _find(model: Any, kind: str, key: dict[str, Any]) -> Any | None:

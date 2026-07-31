@@ -620,6 +620,22 @@ else:
                 validate_compute_instance_topology(self)
 
 
+    # Closed profile -> declared binding-name map, per idea-A section 4.7. nintent has no
+    # repo-sibling access to `ansible_agdev/vars/deployment_profiles.yml` at runtime, so this is
+    # duplicated here deliberately (see p1/plan.md "Binding-name declaration"); Phase 3 will need
+    # the same declaration for the observation slot and can revisit ownership then.
+    PROFILE_BINDING_NAMES = {
+        "node_agent": ("llm_provider",),
+    }
+
+    # Config keys refused once their profile's equivalent binding is the source of truth. Only
+    # `node_agent`/`llm_provider_service` exists today; the old-key refusal is coordinated with
+    # the same key's removal from `ansible_agdev/vars/deployment_profiles.yml`.
+    REFUSED_PROFILE_CONFIG_KEYS = {
+        "node_agent": ("llm_provider_service",),
+    }
+
+
     @extras_features("graphql")
     class DesiredServicePlacement(PrimaryModel):
         """Desired binding of one service instance to one desired node."""
@@ -705,6 +721,14 @@ else:
                 errors["config_schema_version"] = "Config schema version must be non-empty."
             if not isinstance(self.config, dict):
                 errors["config"] = "Placement config must be a JSON object."
+            else:
+                refused_keys = REFUSED_PROFILE_CONFIG_KEYS.get(self.deployment_profile, ())
+                present = sorted(key for key in refused_keys if key in self.config)
+                if present:
+                    errors["config"] = (
+                        f"Deployment profile {self.deployment_profile!r} no longer accepts "
+                        f"config key(s): {', '.join(present)}. Use a DesiredServiceBinding instead."
+                    )
             if (
                 self.desired_endpoint_id
                 and self.desired_node_id
@@ -751,6 +775,24 @@ else:
 
         def get_absolute_url(self) -> str:
             return reverse("plugins:nautobot_intent_catalog:desiredservicebinding", args=[self.pk])
+
+        def clean(self):
+            """Validate the binding_name against the consumer's deployment-profile contract."""
+
+            super().clean()
+            if not self.consumer_placement_id:
+                return
+            profile = self.consumer_placement.deployment_profile
+            declared = PROFILE_BINDING_NAMES.get(profile, ())
+            if self.binding_name not in declared:
+                raise ValidationError(
+                    {
+                        "binding_name": (
+                            f"Deployment profile {profile!r} does not declare binding_name "
+                            f"{self.binding_name!r}."
+                        )
+                    }
+                )
 
 
     @extras_features("graphql")

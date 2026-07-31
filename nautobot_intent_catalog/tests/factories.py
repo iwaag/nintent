@@ -26,6 +26,7 @@ try:
         DesiredNode,
         DesiredNodeOperationalOverride,
         DesiredService,
+        DesiredServiceBinding,
         DesiredServicePlacement,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -124,6 +125,19 @@ else:
         placement.full_clean()
         placement.save()
         return placement
+
+    def make_desired_service_binding(**overrides) -> DesiredServiceBinding:
+        defaults = {
+            "consumer_placement": overrides.pop("consumer_placement", None)
+            or make_desired_service_placement(deployment_profile="node_agent"),
+            "binding_name": "llm_provider",
+            "provider_service": overrides.pop("provider_service", None) or make_desired_service(),
+        }
+        defaults.update(overrides)
+        binding = DesiredServiceBinding(**defaults)
+        binding.full_clean()
+        binding.save()
+        return binding
 
     def make_desired_node_operational_override(**overrides) -> DesiredNodeOperationalOverride:
         defaults = {

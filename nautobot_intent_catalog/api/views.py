@@ -62,6 +62,7 @@ _BATCH_MODELS = {
     "desired_compute_instance": models.DesiredComputeInstance,
     "desired_service": models.DesiredService,
     "desired_service_placement": models.DesiredServicePlacement,
+    "desired_service_binding": models.DesiredServiceBinding,
     "desired_node_operational_override": models.DesiredNodeOperationalOverride,
 }
 
