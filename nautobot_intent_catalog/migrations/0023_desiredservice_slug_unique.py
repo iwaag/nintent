@@ -8,9 +8,19 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveConstraint(
-            model_name="desiredservice",
-            name="nic_unique_desired_service_entity",
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    "ALTER TABLE nautobot_intent_catalog_desiredservice "
+                    "DROP CONSTRAINT IF EXISTS nic_unique_desired_service_entity",
+                ),
+            ],
+            state_operations=[
+                migrations.RemoveConstraint(
+                    model_name="desiredservice",
+                    name="nic_unique_desired_service_entity",
+                ),
+            ],
         ),
         migrations.AlterField(
             model_name="desiredservice",
