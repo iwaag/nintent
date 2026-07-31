@@ -716,6 +716,44 @@ else:
 
 
     @extras_features("graphql")
+    class DesiredServiceBinding(PrimaryModel):
+        """A consumer placement's declared requirement on a provider service.
+
+        Per idea-A section 3.1: identity only, no status/type/notes/lifecycle. Resolution
+        (which provider placement/endpoint satisfies the binding) is computed, never stored.
+        """
+
+        consumer_placement = models.ForeignKey(
+            DesiredServicePlacement,
+            on_delete=models.PROTECT,
+            related_name="service_bindings",
+        )
+        binding_name = models.SlugField(max_length=255)
+        provider_service = models.ForeignKey(
+            DesiredService,
+            on_delete=models.PROTECT,
+            related_name="inbound_bindings",
+        )
+
+        class Meta:
+            ordering = ("consumer_placement__instance_name", "binding_name")
+            verbose_name = "desired service binding"
+            verbose_name_plural = "desired service bindings"
+            constraints = (
+                models.UniqueConstraint(
+                    fields=("consumer_placement", "binding_name"),
+                    name="nic_unique_binding_per_placement",
+                ),
+            )
+
+        def __str__(self) -> str:
+            return f"{self.consumer_placement}: {self.binding_name} -> {self.provider_service}"
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:desiredservicebinding", args=[self.pk])
+
+
+    @extras_features("graphql")
     class DesiredNodeOperationalOverride(PrimaryModel):
         """Optional genuine exceptions to nctl's derived node operation values."""
 
