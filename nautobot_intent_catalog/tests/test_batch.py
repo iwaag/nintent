@@ -96,6 +96,8 @@ try:
     from nautobot_intent_catalog.tests.factories import (
         make_desired_compute_instance,
         make_desired_compute_platform,
+        make_desired_endpoint,
+        make_desired_node,
         make_desired_service,
         make_desired_service_binding,
         make_desired_service_placement,
@@ -103,6 +105,18 @@ try:
 except ImportError:
     pass
 else:
+
+    def _make_resolvable_provider(*, protocol="http", port=11434, dns_name=None):
+        """Build a DesiredService with exactly one active placement and a usable endpoint."""
+        node = make_desired_node()
+        endpoint = make_desired_endpoint(
+            desired_node=node, protocol=protocol, port=port, dns_name=dns_name or f"{node.slug}.local"
+        )
+        service = make_desired_service()
+        placement = make_desired_service_placement(
+            desired_service=service, desired_node=node, desired_endpoint=endpoint, deployment_profile="default"
+        )
+        return service, placement
     class BatchRuntimeTests(TestCase):
         def _active_lxc_document(self, *, mac_address="02:00:00:00:00:01"):
             platform = make_desired_compute_platform(
@@ -348,7 +362,7 @@ else:
 
         def test_apply_batch_creates_a_binding_via_the_batch_endpoint(self):
             placement = make_desired_service_placement(deployment_profile="node_agent")
-            service = make_desired_service()
+            service, _provider_placement = _make_resolvable_provider()
             document = {
                 "dry_run": False,
                 "operations": [
@@ -387,3 +401,140 @@ else:
             result = apply_batch(document).as_dict()
             self.assertEqual(result["transaction"]["status"], "rolled_back")
             self.assertIn("llm_provider_service", result["transaction"]["error"])
+
+    class ServiceBindingGraphInvariantTests(TestCase):
+        """Step 3: final-state idea-A section 4/8 invariants, enforced inside apply_batch."""
+
+        @staticmethod
+        def _trigger_validation(service):
+            """A trivially valid no-op apply, just to run the post-write graph validator."""
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {"op": "upsert", "kind": "desired_service", "key": {"slug": service.slug},
+                     "values": {"lifecycle": service.lifecycle}},
+                ],
+            }
+            return apply_batch(document).as_dict()
+
+        def test_fully_resolvable_binding_commits(self):
+            service, _placement = _make_resolvable_provider()
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+
+            result = self._trigger_validation(service)
+            self.assertEqual(result["transaction"]["status"], "committed")
+
+        def test_ambiguous_provider_is_rejected(self):
+            service, placement_a = _make_resolvable_provider()
+            _service_b, placement_b = _make_resolvable_provider()
+            placement_b.desired_service = service
+            placement_b.full_clean()
+            placement_b.save()
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+
+            result = self._trigger_validation(service)
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("ambiguous", result["transaction"]["error"])
+            self.assertIn(placement_a.instance_name, result["transaction"]["error"])
+            self.assertIn(placement_b.instance_name, result["transaction"]["error"])
+
+        def test_unusable_endpoint_is_rejected(self):
+            service = make_desired_service()
+            placement = make_desired_service_placement(desired_service=service)  # no desired_endpoint
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+
+            result = self._trigger_validation(service)
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("unresolved provider binding", result["transaction"]["error"])
+            self.assertIn(placement.desired_service.slug, result["transaction"]["error"])
+
+        def test_self_reference_is_rejected(self):
+            service, placement = _make_resolvable_provider()
+            placement.deployment_profile = "node_agent"
+            placement.full_clean()
+            placement.save()
+            make_desired_service_binding(consumer_placement=placement, provider_service=service)
+
+            result = self._trigger_validation(service)
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("own consumer placement", result["transaction"]["error"])
+
+        def test_cycle_is_rejected(self):
+            service_1, placement_1 = _make_resolvable_provider()
+            service_2, placement_2 = _make_resolvable_provider()
+            placement_1.deployment_profile = "node_agent"
+            placement_1.full_clean()
+            placement_1.save()
+            placement_2.deployment_profile = "node_agent"
+            placement_2.full_clean()
+            placement_2.save()
+            make_desired_service_binding(consumer_placement=placement_1, provider_service=service_2)
+            make_desired_service_binding(consumer_placement=placement_2, provider_service=service_1)
+
+            result = self._trigger_validation(service_1)
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("cycle", result["transaction"]["error"])
+
+        def test_retiring_a_provider_with_an_inbound_binding_is_rejected_with_the_inbound_set(self):
+            service, placement = _make_resolvable_provider()
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+            committed = self._trigger_validation(service)
+            self.assertEqual(committed["transaction"]["status"], "committed")
+
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {"op": "upsert", "kind": "desired_service", "key": {"slug": service.slug},
+                     "values": {"lifecycle": "retired"}},
+                ],
+            }
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            error = result["transaction"]["error"]
+            self.assertIn("provider:", error)
+            self.assertIn(service.slug, error)
+            self.assertIn(
+                f"{consumer.desired_node.slug} / {consumer.desired_service.slug} / llm_provider", error
+            )
+            service.refresh_from_db()
+            self.assertEqual(service.lifecycle, "active")
+
+        def test_deactivating_the_sole_active_provider_placement_is_rejected(self):
+            service, placement = _make_resolvable_provider()
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+            committed = self._trigger_validation(service)
+            self.assertEqual(committed["transaction"]["status"], "committed")
+
+            document = {
+                "dry_run": False,
+                "operations": [
+                    {"op": "upsert", "kind": "desired_service_placement",
+                     "key": {"desired_service": service.slug, "instance_name": placement.instance_name},
+                     "values": {"desired_state": "disabled"}},
+                ],
+            }
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "rolled_back")
+            self.assertIn("unresolved provider binding", result["transaction"]["error"])
+            placement.refresh_from_db()
+            self.assertEqual(placement.desired_state, "active")
+
+        def test_deleting_a_provider_service_with_an_inbound_binding_is_blocked_in_the_plan(self):
+            service, _placement = _make_resolvable_provider()
+            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            binding = make_desired_service_binding(consumer_placement=consumer, provider_service=service)
+
+            document = {
+                "dry_run": True,
+                "operations": [
+                    {"op": "delete", "kind": "desired_service", "key": {"slug": service.slug}, "values": {}},
+                ],
+            }
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["operations"][0]["action"], "conflict")
+            self.assertIn(f"desired_service_binding:{binding.pk}", result["operations"][0]["reason"])

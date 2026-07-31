@@ -183,6 +183,7 @@ def apply_batch(document: dict[str, Any]) -> BatchResult:
                             setattr(row, name, value)
                     row.full_clean()
                     row.save()
+            _validate_service_binding_graph(models)
     except Exception as exc:  # transaction guarantees all-or-nothing
         result.transaction = {"status": "rolled_back", "committed": False, "error": f"{type(exc).__name__}: {exc}"}
         return result
@@ -272,7 +273,8 @@ _DELETE_BLOCKERS = {
     "desired_endpoint": (("service_placements", "desired_service_placement"), ("local_operational_overrides", "desired_node_operational_override"),
                          ("tailscale_operational_overrides", "desired_node_operational_override")),
     "desired_compute_platform": (("desired_compute_instances", "desired_compute_instance"),),
-    "desired_service": (("placements", "desired_service_placement"),),
+    "desired_service": (("placements", "desired_service_placement"), ("inbound_bindings", "desired_service_binding")),
+    "desired_service_placement": (("service_bindings", "desired_service_binding"),),
 }
 
 
@@ -347,3 +349,135 @@ def _reference_identity(target_kind: str, value: Any) -> dict[str, Any]:
     if _KEYS[target_kind] != ("slug",):
         raise BatchValidationError(f"reference for {target_kind} must use its full identity")
     return {"slug": value}
+
+
+def _binding_usable_endpoint(endpoint: Any) -> bool:
+    """idea-A section 4.4: address, protocol, and port sufficient to produce the endpoint value."""
+    if endpoint is None:
+        return False
+    if str(endpoint.protocol or "").strip().lower() not in {"http", "https"}:
+        return False
+    port = endpoint.port
+    if not isinstance(port, int) or not 1 <= port <= 65535:
+        return False
+    return any(
+        str(getattr(endpoint, field_name, "") or "").strip()
+        for field_name in ("ip_address", "dns_name", "mdns_name")
+    )
+
+
+def _binding_consumer_label(binding: Any) -> str:
+    consumer = binding.consumer_placement
+    return f"{consumer.desired_node.slug} / {consumer.desired_service.slug} / {binding.binding_name}"
+
+
+def _binding_provider_label(service: Any, active_placements: list[Any]) -> str:
+    if len(active_placements) == 1:
+        return f"{service.slug} / {active_placements[0].instance_name}"
+    if not active_placements:
+        return f"{service.slug} / (no active placement)"
+    names = ", ".join(sorted(placement.instance_name for placement in active_placements))
+    return f"{service.slug} / (ambiguous: {names})"
+
+
+def _find_placement_graph_cycle(adjacency: dict[Any, set[Any]], labels: dict[Any, str]) -> str | None:
+    """DFS over consumer_placement.pk -> resolved provider placement.pk edges (idea-A section 4.6)."""
+    color: dict[Any, int] = {}
+    path: list[Any] = []
+
+    def visit(node: Any) -> list[Any] | None:
+        color[node] = 1
+        path.append(node)
+        for neighbor in sorted(adjacency.get(node, ()), key=lambda pk: labels.get(pk, str(pk))):
+            state = color.get(neighbor, 0)
+            if state == 1:
+                return path[path.index(neighbor):] + [neighbor]
+            if state == 0:
+                found = visit(neighbor)
+                if found is not None:
+                    return found
+        path.pop()
+        color[node] = 2
+        return None
+
+    for node in sorted(adjacency, key=lambda pk: labels.get(pk, str(pk))):
+        if color.get(node, 0) == 0:
+            found = visit(node)
+            if found is not None:
+                return " -> ".join(labels.get(pk, str(pk)) for pk in found)
+    return None
+
+
+def _validate_service_binding_graph(models: dict[str, Any]) -> None:
+    """Final-state idea-A section 4/8 invariants, run once after every write in the batch.
+
+    Runs on the state that survives the whole atomic batch, so a batch that removes or retargets
+    a binding in the same operation as retiring its provider is not itself a violation (idea-A
+    section 8's "unless the same atomic batch removes or retargets them").
+    """
+    binding_model = models["desired_service_binding"]
+    placement_model = models["desired_service_placement"]
+    bindings = list(
+        binding_model.objects.select_related(
+            "consumer_placement", "consumer_placement__desired_node", "consumer_placement__desired_service",
+            "provider_service",
+        )
+    )
+    if not bindings:
+        return
+
+    active_placements_by_service: dict[Any, list[Any]] = {}
+    for placement in placement_model.objects.filter(
+        desired_service_id__in={binding.provider_service_id for binding in bindings},
+        desired_state=placement_model.STATE_ACTIVE,
+    ).select_related("desired_endpoint"):
+        active_placements_by_service.setdefault(placement.desired_service_id, []).append(placement)
+
+    errors: list[str] = []
+    provider_problem_bindings: dict[Any, list[Any]] = {}
+    adjacency: dict[Any, set[Any]] = {}
+    labels: dict[Any, str] = {}
+
+    for binding in bindings:
+        consumer = binding.consumer_placement
+        labels[consumer.pk] = f"{consumer.desired_service.slug}/{consumer.instance_name}"
+        if consumer.desired_state != placement_model.STATE_ACTIVE:
+            errors.append(f"{_binding_consumer_label(binding)}: consumer placement is not active")
+            continue
+        if consumer.desired_service.lifecycle != "active":
+            errors.append(f"{_binding_consumer_label(binding)}: consumer service is not active")
+            continue
+
+        provider = binding.provider_service
+        active = active_placements_by_service.get(provider.pk, [])
+        if provider.lifecycle != "active" or len(active) != 1:
+            provider_problem_bindings.setdefault(provider.pk, []).append(binding)
+            continue
+
+        placement = active[0]
+        labels[placement.pk] = f"{provider.slug}/{placement.instance_name}"
+        if placement.pk == consumer.pk:
+            errors.append(f"{_binding_consumer_label(binding)}: binding resolves back to its own consumer placement")
+            continue
+        if not _binding_usable_endpoint(placement.desired_endpoint):
+            provider_problem_bindings.setdefault(provider.pk, []).append(binding)
+            continue
+
+        adjacency.setdefault(consumer.pk, set()).add(placement.pk)
+
+    for service_pk, bad_bindings in provider_problem_bindings.items():
+        service = bad_bindings[0].provider_service
+        active = active_placements_by_service.get(service_pk, [])
+        consumers = sorted(_binding_consumer_label(binding) for binding in bad_bindings)
+        errors.append(
+            "unresolved provider binding:\n"
+            f"provider: {_binding_provider_label(service, active)}\n"
+            "consumers:\n" + "\n".join(f"  - {consumer}" for consumer in consumers)
+        )
+
+    cycle = _find_placement_graph_cycle(adjacency, labels)
+    if cycle:
+        errors.append(f"service binding graph contains a cycle: {cycle}")
+
+    if errors:
+        raise BatchValidationError("; ".join(errors))
