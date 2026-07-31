@@ -172,7 +172,9 @@ class UIContractManifestTests(unittest.TestCase):
 
         client = Client()
         for path in (
+            "/plugins/intent-catalog/sources/",
             "/plugins/intent-catalog/sources/yaml/",
+            "/plugins/intent-catalog/dependencies/",
             "/plugins/intent-catalog/nodes/quick-add/",
             "/plugins/intent-catalog/dashboard/",
         ):
