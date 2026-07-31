@@ -17,45 +17,24 @@ try:
         DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
-        IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
 else:
 
-    class IntentSourceTable(BaseTable):
-        """Intent source list table."""
-
-        slug = tables.LinkColumn()
-
-        class Meta(BaseTable.Meta):
-            model = IntentSource
-            fields = (
-                "slug",
-            )
-            default_columns = (
-                "slug",
-            )
-
-
     class DesiredServiceTable(BaseTable):
         """Desired service list table."""
 
         name = tables.LinkColumn()
-        intent_source = tables.LinkColumn()
         class Meta(BaseTable.Meta):
             model = DesiredService
             fields = (
                 "name",
-                "service_type",
                 "lifecycle",
-                "intent_source",
             )
             default_columns = (
                 "name",
-                "service_type",
                 "lifecycle",
-                "intent_source",
             )
 
 
@@ -63,7 +42,6 @@ else:
         """Desired node list table."""
 
         name = tables.LinkColumn()
-        intent_source = tables.LinkColumn()
         realized_device = tables.LinkColumn()
         endpoint_count = tables.Column(empty_values=(), verbose_name="Endpoints")
 
@@ -79,7 +57,6 @@ else:
                 "accepted_actual_types",
                 "lifecycle",
                 "role",
-                "intent_source",
                 "realized_device",
                 "endpoint_count",
             )
@@ -88,7 +65,6 @@ else:
                 "node_type",
                 "lifecycle",
                 "role",
-                "intent_source",
                 "endpoint_count",
             )
 

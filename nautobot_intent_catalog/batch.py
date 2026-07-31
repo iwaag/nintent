@@ -8,7 +8,7 @@ from typing import Any
 
 SCHEMA_VERSION = "nintent.desired-state-batch.v1"
 KIND_ORDER = (
-    "intent_source", "desired_node", "desired_ip_range", "desired_endpoint",
+    "desired_node", "desired_ip_range", "desired_endpoint",
     "desired_compute_platform", "desired_compute_instance", "desired_service",
     "desired_service_placement", "desired_node_operational_override",
 )
@@ -43,33 +43,32 @@ class BatchResult:
 
 
 _KEYS = {
-    "intent_source": ("slug",), "desired_node": ("slug",), "desired_ip_range": ("slug",),
+    "desired_node": ("slug",), "desired_ip_range": ("slug",),
     "desired_endpoint": ("desired_node", "name", "endpoint_type"),
     "desired_compute_platform": ("slug",), "desired_compute_instance": ("desired_node",),
-    "desired_service": ("intent_source", "catalog_namespace", "catalog_metadata_name", "service_type"),
+    "desired_service": ("slug",),
     "desired_service_placement": ("desired_service", "instance_name"),
     "desired_node_operational_override": ("desired_node",),
 }
 
 _FIELDS = {
-    "intent_source": {"slug"},
     "desired_node": {"name", "slug", "node_type", "lifecycle", "role", "accepted_actual_types", "expected_spec", "realized_device"},
     "desired_ip_range": {"name", "slug", "start_address", "end_address", "range_policy", "lifecycle", "generate_dnsmasq", "dnsmasq_options"},
     "desired_endpoint": {"desired_node", "name", "endpoint_type", "ip_address", "gateway_address", "ip_policy", "mac_address", "dns_name", "mdns_name", "vpn_dns_name", "protocol", "port", "generate_dnsmasq", "dnsmasq_record_type", "realized_ip_address"},
     "desired_compute_platform": {"name", "slug", "lifecycle", "control_node", "config", "realized_cluster"},
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "desired_presence", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
-    "desired_service": {"intent_source", "name", "slug", "service_type", "lifecycle", "catalog_namespace", "catalog_metadata_name"},
+    "desired_service": {"name", "slug", "lifecycle"},
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
     "desired_node_operational_override": {"desired_node", "declared_host_os", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
 }
 
 _CREATE_REQUIRED = {
-    "intent_source": {"slug"}, "desired_node": {"name", "node_type", "lifecycle"},
+    "desired_node": {"name", "node_type", "lifecycle"},
     "desired_ip_range": {"name", "start_address", "end_address", "range_policy"},
     "desired_endpoint": {"desired_node", "name", "endpoint_type"},
     "desired_compute_platform": {"name", "lifecycle", "control_node", "config"},
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "vcpus", "memory_mb", "root_disk_gb", "config"},
-    "desired_service": {"intent_source", "name", "slug", "service_type", "catalog_namespace", "catalog_metadata_name"},
+    "desired_service": {"name", "slug"},
     "desired_service_placement": {"desired_service", "desired_node", "instance_name", "deployment_profile", "config_schema_version", "config"},
     "desired_node_operational_override": {"desired_node"},
 }
@@ -196,7 +195,7 @@ def _planned(operation: Operation, action: str, *, changed: dict[str, Any] | Non
 
 def _models() -> dict[str, Any]:
     from . import models
-    return {"intent_source": models.IntentSource, "desired_node": models.DesiredNode,
+    return {"desired_node": models.DesiredNode,
             "desired_ip_range": models.DesiredIPRange, "desired_endpoint": models.DesiredEndpoint,
             "desired_compute_platform": models.DesiredComputePlatform, "desired_compute_instance": models.DesiredComputeInstance,
             "desired_service": models.DesiredService,
@@ -213,7 +212,6 @@ _ACTUAL_REFERENCE_MODELS = {
 
 
 _REFERENCE_KIND = {"desired_node": "desired_node", "control_node": "desired_node", "platform": "desired_compute_platform",
-                   "intent_source": "intent_source",
                    "desired_service": "desired_service", "desired_endpoint": "desired_endpoint",
                    "local_endpoint": "desired_endpoint", "tailscale_endpoint": "desired_endpoint"}
 
@@ -263,7 +261,6 @@ def _value_differs(row: Any, name: str, value: Any, models: dict[str, Any]) -> b
 
 
 _DELETE_BLOCKERS = {
-    "intent_source": (("desired_services", "desired_service"),),
     "desired_node": (("desired_endpoints", "desired_endpoint"), ("controlled_compute_platforms", "desired_compute_platform"),
                      ("desired_compute_instance", "desired_compute_instance"), ("service_placements", "desired_service_placement"),
                      ("operational_override", "desired_node_operational_override")),

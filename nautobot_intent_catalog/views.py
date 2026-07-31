@@ -13,7 +13,6 @@ try:
         DesiredNodeOperationalOverrideFilterSet,
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
-        IntentSourceFilterSet,
     )
     from .models import (
         BrainDumpDocument,
@@ -25,7 +24,6 @@ try:
         DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
-        IntentSource,
     )
     from .tables import (
         BrainDumpDocumentTable,
@@ -37,30 +35,15 @@ try:
         DesiredNodeOperationalOverrideTable,
         DesiredServiceTable,
         DesiredServicePlacementTable,
-        IntentSourceTable,
     )
 except ImportError:  # pragma: no cover - Nautobot is unavailable in local unit tests.
     pass
 else:
 
-    class IntentSourceListView(ObjectListView):
-        """List DB-backed intent source records."""
-
-        queryset = IntentSource.objects.all()
-        filterset = IntentSourceFilterSet
-        table = IntentSourceTable
-
-
-    class IntentSourceView(ObjectView):
-        """Show one intent source record."""
-
-        queryset = IntentSource.objects.all()
-
-
     class DesiredServiceListView(ObjectListView):
         """List desired service records."""
 
-        queryset = DesiredService.objects.select_related("intent_source")
+        queryset = DesiredService.objects.all()
         filterset = DesiredServiceFilterSet
         table = DesiredServiceTable
 
@@ -68,7 +51,7 @@ else:
     class DesiredServiceView(ObjectView):
         """Show one desired service record."""
 
-        queryset = DesiredService.objects.select_related("intent_source")
+        queryset = DesiredService.objects.all()
 
 
     class DesiredNodeListView(ObjectListView):

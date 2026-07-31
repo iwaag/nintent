@@ -8,13 +8,12 @@ Operator-facing ledger steps only. Desired-vs-actual drift and consumer renderin
 1. Install the App into Nautobot's Python environment and enable
    `nautobot_intent_catalog` in `PLUGINS`.
 2. Run `nautobot-server migrate nautobot_intent_catalog`.
-3. Restart Nautobot and open `/plugins/intent-catalog/sources/`.
+3. Restart Nautobot and open `/plugins/intent-catalog/services/`.
 
 ## Key URLs
 
 | Page | Path |
 |---|---|
-| Sources | `/plugins/intent-catalog/sources/` |
 | Desired Nodes | `/plugins/intent-catalog/nodes/` |
 | Desired Services | `/plugins/intent-catalog/services/` |
 | Desired service placements | `/plugins/intent-catalog/placements/` |
@@ -35,8 +34,7 @@ written atomically through `POST /api/plugins/intent-catalog/desired-state/batch
 |---|---|
 | `Reconcile Desired IPAM Intent` | Dry-run/apply explicit-IP endpoints into `IPAddress` (`dhcp_reserved` always eligible; `static`/`external` need a matching self-observation). |
 
-`Preview Intent Source Analysis` was removed — Analyze's `apply=false` preview covers the same read-only
-information. The old Evaluate Jobs, production inventory export Job, profile sync Job,
+The old Evaluate Jobs, production inventory export Job, profile sync Job,
 `IntentEvaluation`, and `DeploymentProfileProjection` were removed in 0.6.0.
 
 ## nctl workflows

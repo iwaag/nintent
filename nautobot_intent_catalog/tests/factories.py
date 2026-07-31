@@ -27,7 +27,6 @@ try:
         DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
-        IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -36,12 +35,6 @@ else:
 
     def _next(prefix: str) -> str:
         return f"{prefix}-{next(_counter)}"
-
-    def make_intent_source(**overrides) -> IntentSource:
-        slug = _next("src")
-        defaults = {"slug": slug}
-        defaults.update(overrides)
-        return IntentSource.objects.create(**defaults)
 
     def make_desired_node(**overrides) -> DesiredNode:
         slug = _next("node")
@@ -62,10 +55,7 @@ else:
         defaults = {
             "name": slug,
             "slug": slug,
-            "service_type": DesiredService.SERVICE_TYPE_SERVICE,
             "lifecycle": DesiredService.LIFECYCLE_ACTIVE,
-            "intent_source": overrides.pop("intent_source", None) or make_intent_source(),
-            "catalog_metadata_name": slug,
         }
         defaults.update(overrides)
         service = DesiredService(**defaults)

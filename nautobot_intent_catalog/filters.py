@@ -17,28 +17,10 @@ try:
         DesiredNodeOperationalOverride,
         DesiredService,
         DesiredServicePlacement,
-        IntentSource,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
 else:
-
-    class IntentSourceFilterSet(NautobotFilterSet):
-        """Filters for intent sources."""
-
-        q = django_filters.CharFilter(method="search", label="Search")
-
-        class Meta:
-            model = IntentSource
-            fields = ("id", "slug")
-
-        def search(self, queryset, name, value):
-            if not value.strip():
-                return queryset
-            return (
-                queryset.filter(slug__icontains=value)
-            )
-
 
     class DesiredServiceFilterSet(NautobotFilterSet):
         """Filters for desired services."""
@@ -51,9 +33,7 @@ else:
                 "id",
                 "name",
                 "slug",
-                "service_type",
                 "lifecycle",
-                "intent_source",
             )
 
         def search(self, queryset, name, value):

@@ -58,45 +58,9 @@ except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in loc
     PrimaryModel = object  # type: ignore[assignment]
 else:
 
-    class IntentSource(PrimaryModel):
-        """Input source record used for intent import and analysis."""
-
-        slug = models.SlugField(max_length=255, unique=True)
-
-        class Meta:
-            ordering = ("slug",)
-            verbose_name = "intent source"
-            verbose_name_plural = "intent sources"
-
-        def __str__(self) -> str:
-            return self.slug
-
-        def get_absolute_url(self) -> str:
-            return reverse("plugins:nautobot_intent_catalog:intentsource", args=[self.pk])
-
-
     @extras_features("graphql")
     class DesiredService(PrimaryModel):
         """Desired service generated from source metadata."""
-
-        SERVICE_TYPE_SERVICE = "service"
-        SERVICE_TYPE_WEBSITE = "website"
-        SERVICE_TYPE_WORKER = "worker"
-        SERVICE_TYPE_DATABASE = "database"
-        SERVICE_TYPE_QUEUE = "queue"
-        SERVICE_TYPE_STORAGE = "storage"
-        SERVICE_TYPE_AGENT = "agent"
-        SERVICE_TYPE_OTHER = "other"
-        SERVICE_TYPE_CHOICES = (
-            (SERVICE_TYPE_SERVICE, "Service"),
-            (SERVICE_TYPE_WEBSITE, "Website"),
-            (SERVICE_TYPE_WORKER, "Worker"),
-            (SERVICE_TYPE_DATABASE, "Database"),
-            (SERVICE_TYPE_QUEUE, "Queue"),
-            (SERVICE_TYPE_STORAGE, "Storage"),
-            (SERVICE_TYPE_AGENT, "Agent"),
-            (SERVICE_TYPE_OTHER, "Other"),
-        )
 
         LIFECYCLE_PROPOSED = "proposed"
         LIFECYCLE_PLANNED = "planned"
@@ -114,40 +78,16 @@ else:
         )
 
         name = models.SlugField(max_length=255)
-        slug = models.SlugField(max_length=255)
-        service_type = models.CharField(
-            max_length=64,
-            choices=SERVICE_TYPE_CHOICES,
-            default=SERVICE_TYPE_SERVICE,
-        )
+        slug = models.SlugField(max_length=255, unique=True)
         lifecycle = models.CharField(
             max_length=64,
             choices=LIFECYCLE_CHOICES,
             default=LIFECYCLE_PROPOSED,
         )
-        intent_source = models.ForeignKey(
-            IntentSource,
-            on_delete=models.CASCADE,
-            related_name="desired_services",
-        )
-        catalog_namespace = models.CharField(max_length=255, default="default")
-        catalog_metadata_name = models.CharField(max_length=255)
-
         class Meta:
             ordering = ("name",)
             verbose_name = "desired service"
             verbose_name_plural = "desired services"
-            constraints = (
-                models.UniqueConstraint(
-                    fields=(
-                        "intent_source",
-                        "catalog_namespace",
-                        "catalog_metadata_name",
-                        "service_type",
-                    ),
-                    name="nic_unique_desired_service_entity",
-                ),
-            )
 
         def __str__(self) -> str:
             return self.name

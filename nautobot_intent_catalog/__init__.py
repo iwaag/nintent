@@ -19,7 +19,7 @@ class IntentCatalogConfig(NautobotAppConfig):
     base_url = "intent-catalog"
     required_settings = []
     default_settings = {}
-    home_view_name = "plugins:nautobot_intent_catalog:intentsource_list"
+    home_view_name = "plugins:nautobot_intent_catalog:desiredservice_list"
 
 
 config = IntentCatalogConfig

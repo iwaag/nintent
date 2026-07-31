@@ -27,10 +27,6 @@ else:
                     weight=200,
                     items=(
                         NavMenuItem(
-                            link="plugins:nautobot_intent_catalog:intentsource_list",
-                            name="Sources",
-                        ),
-                        NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desiredservice_list",
                             name="Desired Services",
                         ),

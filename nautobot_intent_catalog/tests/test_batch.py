@@ -23,15 +23,31 @@ class BatchDecodeTests(unittest.TestCase):
             ]})
         with self.assertRaises(BatchValidationError):
             decode_batch({"dry_run": True, "operations": [
-                {"op": "delete", "kind": "intent_source", "key": {"slug": "a"}, "values": {}},
-                {"op": "delete", "kind": "intent_source", "key": {"slug": "a"}, "values": {}},
+                {"op": "delete", "kind": "desired_service", "key": {"slug": "a"}, "values": {}},
+                {"op": "delete", "kind": "desired_service", "key": {"slug": "a"}, "values": {}},
             ]})
 
     def test_plan_is_deterministic(self):
         document = {"dry_run": True, "operations": [
-            {"op": "delete", "kind": "intent_source", "key": {"slug": "a"}, "values": {}},
+            {"op": "delete", "kind": "desired_service", "key": {"slug": "a"}, "values": {}},
         ]}
         self.assertEqual(plan_batch(document).as_dict(), plan_batch(document).as_dict())
+
+    def test_rejects_the_removed_legacy_desired_service_identity(self):
+        with self.assertRaises(BatchValidationError):
+            decode_batch({"dry_run": True, "operations": [
+                {
+                    "op": "upsert",
+                    "kind": "desired_service",
+                    "key": {
+                        "intent" + "_source": "manual",
+                        "catalog" + "_namespace": "default",
+                        "catalog" + "_metadata_name": "example-service",
+                        "service" + "_type": "service",
+                    },
+                    "values": {"name": "example-service", "slug": "example-service"},
+                },
+            ]})
 
     def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
         class Query:
@@ -62,7 +78,7 @@ class BatchDecodeTests(unittest.TestCase):
 try:
     from django.test import TestCase
     from django.core.exceptions import ValidationError
-    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, IntentSource
+    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode
     from nautobot_intent_catalog.tests.factories import make_desired_compute_instance, make_desired_compute_platform
 except ImportError:
     pass
@@ -115,16 +131,18 @@ else:
             self.assertEqual(endpoint.mac_address, "02:00:00:00:00:01")
             self.assertEqual(instance.config["vmid"], 101)
 
-        def test_dry_run_does_not_write_and_apply_creates_one_row(self):
+        def test_dry_run_does_not_write_and_apply_creates_one_service(self):
             document = {"dry_run": True, "operations": [
-                {"op": "upsert", "kind": "intent_source", "key": {"slug": "batch-source"}, "values": {}},
+                {"op": "upsert", "kind": "desired_service", "key": {"slug": "batch-service"},
+                 "values": {"name": "batch-service", "lifecycle": "active"}},
             ]}
-            before = IntentSource.objects.filter(slug="batch-source").count()
+            from nautobot_intent_catalog.models import DesiredService
+            before = DesiredService.objects.filter(slug="batch-service").count()
             self.assertEqual(plan_batch(document).as_dict()["totals"]["create"], 1)
-            self.assertEqual(IntentSource.objects.filter(slug="batch-source").count(), before)
+            self.assertEqual(DesiredService.objects.filter(slug="batch-service").count(), before)
             result = apply_batch({**document, "dry_run": False}).as_dict()
             self.assertTrue(result["transaction"]["committed"])
-            self.assertEqual(IntentSource.objects.filter(slug="batch-source").count(), before + 1)
+            self.assertEqual(DesiredService.objects.filter(slug="batch-service").count(), before + 1)
 
         def test_reference_resolves_from_an_earlier_batch_operation(self):
             document = {"dry_run": False, "operations": [
@@ -179,13 +197,12 @@ else:
 
         def test_apply_rolls_back_everything_when_full_clean_fails(self):
             document = {"dry_run": False, "operations": [
-                {"op": "upsert", "kind": "intent_source", "key": {"slug": "rollback-source"}, "values": {}},
                 {"op": "upsert", "kind": "desired_node", "key": {"slug": "bad-node"},
                  "values": {"name": "bad-node", "node_type": "not-a-choice", "lifecycle": "planned"}},
             ]}
             result = apply_batch(document).as_dict()
             self.assertEqual(result["transaction"]["status"], "rolled_back")
-            self.assertFalse(IntentSource.objects.filter(slug="rollback-source").exists())
+            self.assertFalse(DesiredNode.objects.filter(slug="bad-node").exists())
 
         def test_compute_instance_desired_presence_defaults_to_present(self):
             instance = make_desired_compute_instance()

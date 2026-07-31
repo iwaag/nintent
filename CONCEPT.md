@@ -8,7 +8,6 @@ object is meant to represent.
 
 Intent Catalog separates desired state into a few layers:
 
-- `IntentSource`: where desired state came from.
 - `DesiredService`: a logical service or workload that should exist.
 - `DesiredNode`: a desired node intent, classified separately from the actual
   Nautobot object types that may realize it.
@@ -22,30 +21,6 @@ Intent Catalog separates desired state into a few layers:
 The current implementation stores desired state and deterministic exports. It
 does not yet automatically prove that every desired service is running or that
 every dependency is satisfied.
-
-## IntentSource
-
-`IntentSource` describes the source of truth or input channel for intent.
-
-The most important current source type is `git_repository`. It is intended to
-mean:
-
-> A source repository that declares a desired service for this environment.
-> Catalog metadata in the repository is analyzed into `DesiredService` rows.
-
-In practice, a GitHub or GitLab repository containing Backstage catalog metadata
-can become the source for one or more desired services.
-
-Other source types are available as classification hooks:
-
-- `git_repository`: a source repository analyzed for service intent.
-- `yaml_file`: a YAML file used to declare intent directly.
-- `manual`: intent entered or maintained by a person in Nautobot.
-- `api`: intent synchronized from another system.
-- `generated`: intent produced by an agent or automation tool.
-
-The non-Git source types are currently lightweight classifications. The thickest
-implemented paths are Git-backed service analysis and YAML import.
 
 ## DesiredService
 
@@ -61,17 +36,12 @@ Examples:
 - `postgresql`
 - `redis`
 
-`DesiredService` is intended to answer:
+`DesiredService` is identified by its unique `slug` and carries its lifecycle.
+It is intended to answer:
 
 - What service should exist?
-- What type of service is it?
-- Who owns it?
 - What lifecycle state is intended?
 - What placement is intended?
-- When was it last analyzed from its source?
-
-The current Git analysis path primarily creates `DesiredService` rows from
-Backstage `Component` catalog entries.
 
 ## DesiredNode
 

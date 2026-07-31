@@ -50,10 +50,6 @@ if HAS_DJANGO:
                 "nautobot_intent_catalog.add_desiredendpoint",
                 "nautobot_intent_catalog.change_desiredendpoint",
                 "nautobot_intent_catalog.delete_desiredendpoint",
-                "nautobot_intent_catalog.view_intentsource",
-                "nautobot_intent_catalog.add_intentsource",
-                "nautobot_intent_catalog.change_intentsource",
-                "nautobot_intent_catalog.delete_intentsource",
             )
 
         @staticmethod
@@ -101,7 +97,6 @@ if HAS_DJANGO:
             self.assertFalse(models.DesiredEndpoint.objects.filter(desired_node=delete_node).exists())
 
             conflict = {"dry_run": False, "operations": [
-                {"op": "upsert", "kind": "intent_source", "key": {"slug": "api-no-write"}, "values": {}},
                 {"op": "upsert", "kind": "desired_endpoint",
                  "key": {"desired_node": "missing-node", "name": "primary", "endpoint_type": "primary"},
                  "values": {"ip_policy": "external"}},
@@ -109,7 +104,7 @@ if HAS_DJANGO:
             response = self.client.post(self.endpoint_url, conflict, format="json", **self.header)
             self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
             self.assertEqual(response.data["transaction"]["status"], "blocked")
-            self.assertFalse(models.IntentSource.objects.filter(slug="api-no-write").exists())
+            self.assertFalse(models.DesiredEndpoint.objects.filter(desired_node__slug="missing-node").exists())
 
         def test_yaml_json_and_invalid_request_contract(self):
             document = {"dry_run": True, "operations": [self.node_upsert("api-yaml")]}

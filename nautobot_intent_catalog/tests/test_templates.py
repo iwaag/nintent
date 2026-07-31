@@ -21,7 +21,6 @@ class ObjectViewTemplateTests(unittest.TestCase):
             "desirednodeoperationaloverride.html",
             "desiredservice.html",
             "desiredserviceplacement.html",
-            "intentsource.html",
         }
 
         missing_templates = sorted(

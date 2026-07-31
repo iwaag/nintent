@@ -55,7 +55,6 @@ class XYamlParser(_YAMLParser):
 
 
 _BATCH_MODELS = {
-    "intent_source": models.IntentSource,
     "desired_node": models.DesiredNode,
     "desired_ip_range": models.DesiredIPRange,
     "desired_endpoint": models.DesiredEndpoint,

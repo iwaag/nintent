@@ -4,7 +4,7 @@
 <div class="container-fluid">
     <div class="row">
         <div class="col-md-12">
-            <h1>{{ object.display_name|default:object.name }}</h1>
+            <h1>{{ object.name }}</h1>
 
             <div class="panel panel-default">
                 <div class="panel-heading">
@@ -20,74 +20,8 @@
                         <td><code>{{ object.slug }}</code></td>
                     </tr>
                     <tr>
-                        <th scope="row">Display Name</th>
-                        <td>{{ object.display_name|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Service Type</th>
-                        <td>{{ object.get_service_type_display|default:object.service_type }}</td>
-                    </tr>
-                    <tr>
                         <th scope="row">Lifecycle</th>
                         <td>{{ object.get_lifecycle_display|default:object.lifecycle }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Intent Source</th>
-                        <td>
-                            {% if object.intent_source %}
-                                <a href="{{ object.intent_source.get_absolute_url }}">{{ object.intent_source }}</a>
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Source Ref</th>
-                        <td>{{ object.source_ref|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Source Catalog Path</th>
-                        <td>{{ object.source_catalog_path|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Catalog Entity</th>
-                        <td>
-                            {{ object.catalog_kind|default:"-" }} /
-                            {{ object.catalog_namespace|default:"-" }} /
-                            {{ object.catalog_metadata_name|default:"-" }}
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Catalog Owner</th>
-                        <td>{{ object.catalog_owner|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Catalog Lifecycle</th>
-                        <td>{{ object.catalog_lifecycle|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Prefers GPU</th>
-                        <td>{{ object.prefers_gpu|yesno:"Yes,No" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Minimum Memory GB</th>
-                        <td>{{ object.min_memory_gb|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Last Analyzed At</th>
-                        <td>{{ object.last_analyzed_at|default:"-" }}</td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Requirements</th>
-                        <td><pre>{{ object.requirements|default_if_none:"{}" }}</pre></td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Analysis Provenance</th>
-                        <td><pre>{{ object.analysis_provenance|default_if_none:"{}" }}</pre></td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Notes</th>
-                        <td>{{ object.notes|default:"-" }}</td>
                     </tr>
                 </table>
             </div>

@@ -23,8 +23,6 @@ else:
 
 
 RETAINED_UI_ROUTE_NAMES = [
-    "intentsource_list",
-    "intentsource",
     "desiredservice_list",
     "desiredservice",
     "desirednode_list",
@@ -50,9 +48,6 @@ REMOVED_UI_ROUTE_NAMES = [
     "source_yaml_list",
     "source_list",
     "desiredhost_quick_add",
-    "intentsource_add",
-    "intentsource_edit",
-    "intentsource_delete",
     "desiredservice_add",
     "desiredservice_edit",
     "desiredservice_delete",
@@ -85,12 +80,11 @@ REMOVED_UI_ROUTE_NAMES = [
     "desirediprange_delete",
 ]
 
-assert len(REMOVED_UI_ROUTE_NAMES) == 37, len(REMOVED_UI_ROUTE_NAMES)
+assert len(REMOVED_UI_ROUTE_NAMES) == 34, len(REMOVED_UI_ROUTE_NAMES)
 
 # Literal URL prefix (relative to `/plugins/intent-catalog/`) for each retained model's list
 # route, and whether that model ever had a removed `.../add/` route.
 MODEL_URL_PREFIXES = {
-    "intentsource_list": ("sources", True),
     "desiredservice_list": ("services", True),
     "desirednode_list": ("nodes", True),
     "desiredendpoint_list": ("endpoints", True),
@@ -106,8 +100,8 @@ MODEL_URL_PREFIXES = {
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_20(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 20)
+    def test_retained_routes_count_is_18(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 18)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -133,7 +127,6 @@ class UIContractManifestTests(unittest.TestCase):
                 full_name = f"plugins:nautobot_intent_catalog:{name}"
                 with self.assertRaises(NoReverseMatch):
                     if any(name.endswith(suffix) for suffix in ("_edit", "_delete", "_add")) and name not in (
-                        "intentsource_add",
                         "desiredservice_add",
                         "desirednode_add",
                         "desiredendpoint_add",
@@ -239,19 +232,11 @@ if HAS_DJANGO:
         make_desired_node_operational_override,
         make_desired_service,
         make_desired_service_placement,
-        make_intent_source,
     )
 
     # One entry per retained model: list/detail route names, the model class, its factory, and
     # a distinctive field expected to render on both the list (htmx) and detail page.
     RUNTIME_MODEL_MATRIX = [
-        {
-            "list": "intentsource_list",
-            "detail": "intentsource",
-            "model": _models.IntentSource,
-            "factory": make_intent_source,
-            "label_field": "slug",
-        },
         {
             "list": "desiredservice_list",
             "detail": "desiredservice",

@@ -24,9 +24,9 @@ loader, importer, and analysis code that can run without Nautobot:
 python3 -m unittest discover -s nautobot_intent_catalog/tests
 ```
 
-Desired-state reference validation used by the YAML loader lives in the Django-free
-`intent_contract.py`. Production composition, profile validation, actual-fact policy, and drift
-comparators live and are tested in nctl; do not reintroduce those processing rules here.
+Desired-state request validation lives in the Django-free `batch.py`. Production composition,
+profile validation, actual-fact policy, and drift comparators live and are tested in nctl; do not
+reintroduce those processing rules here.
 
 `compute_contract.py` is the semantic owner for the shared compute contract. Its Django-free
 `compute_conformance.py` executes that owner over the ordered JSON-only case set and publishes the
