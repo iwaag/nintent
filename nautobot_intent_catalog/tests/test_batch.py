@@ -33,26 +33,17 @@ class BatchDecodeTests(unittest.TestCase):
         ]}
         self.assertEqual(plan_batch(document).as_dict(), plan_batch(document).as_dict())
 
-    def test_rejects_the_removed_legacy_desired_service_identity(self):
-        # The four legacy key names are written as plain literals on purpose: this test
-        # only proves "no dual reader survived" if it sends the exact bytes a stale
-        # client would send. They are the one intentional occurrence left in the tree, so
-        # a residual sweep for the removed Backstage identity must exclude this file
-        # rather than the literals being split to slip past the grep.
-        with self.assertRaises(BatchValidationError):
-            decode_batch({"dry_run": True, "operations": [
-                {
-                    "op": "upsert",
-                    "kind": "desired_service",
-                    "key": {
-                        "intent_source": "manual",
-                        "catalog_namespace": "default",
-                        "catalog_metadata_name": "example-service",
-                        "service_type": "service",
-                    },
-                    "values": {"name": "example-service", "slug": "example-service"},
-                },
-            ]})
+    def test_rejects_a_key_that_is_not_the_declared_identity(self):
+        for case, key in (
+            ("wrong name", {"name": "example-service"}),
+            ("superset", {"slug": "example-service", "namespace": "default"}),
+            ("empty value", {"slug": ""}),
+        ):
+            with self.subTest(case=case), self.assertRaises(BatchValidationError):
+                decode_batch({"dry_run": True, "operations": [
+                    {"op": "upsert", "kind": "desired_service", "key": key,
+                     "values": {"name": "example-service", "slug": "example-service"}},
+                ]})
 
     def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
         class Query:
