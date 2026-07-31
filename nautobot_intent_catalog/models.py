@@ -157,63 +157,6 @@ else:
 
 
     @extras_features("graphql")
-    class DesiredDependency(PrimaryModel):
-        """Dependency metadata attached to a desired service."""
-
-        RESOLUTION_UNRESOLVED = "unresolved"
-        RESOLUTION_RESOLVED = "resolved"
-        RESOLUTION_EXTERNAL = "external"
-        RESOLUTION_IGNORED = "ignored"
-        RESOLUTION_STATUS_CHOICES = (
-            (RESOLUTION_UNRESOLVED, "Unresolved"),
-            (RESOLUTION_RESOLVED, "Resolved"),
-            (RESOLUTION_EXTERNAL, "External"),
-            (RESOLUTION_IGNORED, "Ignored"),
-        )
-
-        source_service = models.ForeignKey(
-            DesiredService,
-            on_delete=models.CASCADE,
-            related_name="dependencies",
-        )
-        dependency_kind = models.CharField(max_length=64)
-        namespace = models.CharField(max_length=255, default="default")
-        name = models.CharField(max_length=255)
-        raw_ref = models.CharField(max_length=512)
-        dependency_type = models.CharField(max_length=64)
-        resolution_status = models.CharField(
-            max_length=64,
-            choices=RESOLUTION_STATUS_CHOICES,
-            default=RESOLUTION_UNRESOLVED,
-        )
-        resolved_service = models.ForeignKey(
-            DesiredService,
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-            related_name="resolved_by_dependencies",
-        )
-        notes = models.TextField(blank=True, null=True)
-
-        class Meta:
-            ordering = ("source_service__name", "dependency_kind", "namespace", "name")
-            verbose_name = "desired dependency"
-            verbose_name_plural = "desired dependencies"
-            constraints = (
-                models.UniqueConstraint(
-                    fields=("source_service", "dependency_kind", "namespace", "name"),
-                    name="nic_unique_dependency_ref",
-                ),
-            )
-
-        def __str__(self) -> str:
-            return f"{self.dependency_kind}:{self.namespace}/{self.name}"
-
-        def get_absolute_url(self) -> str:
-            return reverse("plugins:nautobot_intent_catalog:desireddependency", args=[self.pk])
-
-
-    @extras_features("graphql")
     class DesiredNode(PrimaryModel):
         """Desired node intent that may be realized by one or more actual object types."""
 

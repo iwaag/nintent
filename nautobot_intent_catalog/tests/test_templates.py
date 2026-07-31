@@ -15,7 +15,6 @@ class ObjectViewTemplateTests(unittest.TestCase):
             "braindumpdocument.html",
             "desiredcomputeinstance.html",
             "desiredcomputeplatform.html",
-            "desireddependency.html",
             "desiredendpoint.html",
             "desirediprange.html",
             "desirednode.html",

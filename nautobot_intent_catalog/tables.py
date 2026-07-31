@@ -11,7 +11,6 @@ try:
         BrainDumpDocument,
         DesiredComputeInstance,
         DesiredComputePlatform,
-        DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
@@ -44,12 +43,6 @@ else:
 
         name = tables.LinkColumn()
         intent_source = tables.LinkColumn()
-        dependency_count = tables.Column(empty_values=(), verbose_name="Dependencies")
-
-        def render_dependency_count(self, record):
-            """Return dependency count for display."""
-            return record.dependencies.count()
-
         class Meta(BaseTable.Meta):
             model = DesiredService
             fields = (
@@ -57,40 +50,12 @@ else:
                 "service_type",
                 "lifecycle",
                 "intent_source",
-                "dependency_count",
             )
             default_columns = (
                 "name",
                 "service_type",
                 "lifecycle",
                 "intent_source",
-                "dependency_count",
-            )
-
-
-    class DesiredDependencyTable(BaseTable):
-        """Desired dependency list table."""
-
-        source_service = tables.LinkColumn()
-        resolved_service = tables.LinkColumn()
-
-        class Meta(BaseTable.Meta):
-            model = DesiredDependency
-            fields = (
-                "source_service",
-                "dependency_kind",
-                "namespace",
-                "name",
-                "resolution_status",
-                "resolved_service",
-            )
-            default_columns = (
-                "source_service",
-                "dependency_kind",
-                "namespace",
-                "name",
-                "resolution_status",
-                "resolved_service",
             )
 
 

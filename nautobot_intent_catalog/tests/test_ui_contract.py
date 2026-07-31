@@ -27,8 +27,6 @@ RETAINED_UI_ROUTE_NAMES = [
     "intentsource",
     "desiredservice_list",
     "desiredservice",
-    "desireddependency_list",
-    "desireddependency",
     "desirednode_list",
     "desirednode",
     "desiredendpoint_list",
@@ -58,8 +56,6 @@ REMOVED_UI_ROUTE_NAMES = [
     "desiredservice_add",
     "desiredservice_edit",
     "desiredservice_delete",
-    "desireddependency_edit",
-    "desireddependency_delete",
     "desirednode_add",
     "desirednode_edit",
     "desirednode_delete",
@@ -89,15 +85,13 @@ REMOVED_UI_ROUTE_NAMES = [
     "desirediprange_delete",
 ]
 
-assert len(REMOVED_UI_ROUTE_NAMES) == 39, len(REMOVED_UI_ROUTE_NAMES)
+assert len(REMOVED_UI_ROUTE_NAMES) == 37, len(REMOVED_UI_ROUTE_NAMES)
 
 # Literal URL prefix (relative to `/plugins/intent-catalog/`) for each retained model's list
-# route, and whether that model ever had a removed `.../add/` route (DesiredDependency rows are
-# only ever produced by analysis, so it never had one).
+# route, and whether that model ever had a removed `.../add/` route.
 MODEL_URL_PREFIXES = {
     "intentsource_list": ("sources", True),
     "desiredservice_list": ("services", True),
-    "desireddependency_list": ("dependencies", False),
     "desirednode_list": ("nodes", True),
     "desiredendpoint_list": ("endpoints", True),
     "desiredcomputeplatform_list": ("compute-platforms", True),
@@ -112,8 +106,8 @@ MODEL_URL_PREFIXES = {
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_22(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 22)
+    def test_retained_routes_count_is_20(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 20)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -239,7 +233,6 @@ if HAS_DJANGO:
         make_braindump,
         make_desired_compute_instance,
         make_desired_compute_platform,
-        make_desired_dependency,
         make_desired_endpoint,
         make_desired_ip_range,
         make_desired_node,
@@ -264,13 +257,6 @@ if HAS_DJANGO:
             "detail": "desiredservice",
             "model": _models.DesiredService,
             "factory": make_desired_service,
-            "label_field": "name",
-        },
-        {
-            "list": "desireddependency_list",
-            "detail": "desireddependency",
-            "model": _models.DesiredDependency,
-            "factory": make_desired_dependency,
             "label_field": "name",
         },
         {

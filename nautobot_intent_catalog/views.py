@@ -7,7 +7,6 @@ try:
         BrainDumpDocumentFilterSet,
         DesiredComputeInstanceFilterSet,
         DesiredComputePlatformFilterSet,
-        DesiredDependencyFilterSet,
         DesiredEndpointFilterSet,
         DesiredIPRangeFilterSet,
         DesiredNodeFilterSet,
@@ -20,7 +19,6 @@ try:
         BrainDumpDocument,
         DesiredComputeInstance,
         DesiredComputePlatform,
-        DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
@@ -33,7 +31,6 @@ try:
         BrainDumpDocumentTable,
         DesiredComputeInstanceTable,
         DesiredComputePlatformTable,
-        DesiredDependencyTable,
         DesiredEndpointTable,
         DesiredIPRangeTable,
         DesiredNodeTable,
@@ -72,20 +69,6 @@ else:
         """Show one desired service record."""
 
         queryset = DesiredService.objects.select_related("intent_source")
-
-
-    class DesiredDependencyListView(ObjectListView):
-        """List desired dependency records."""
-
-        queryset = DesiredDependency.objects.select_related("source_service", "resolved_service")
-        filterset = DesiredDependencyFilterSet
-        table = DesiredDependencyTable
-
-
-    class DesiredDependencyView(ObjectView):
-        """Show one desired dependency record."""
-
-        queryset = DesiredDependency.objects.select_related("source_service", "resolved_service")
 
 
     class DesiredNodeListView(ObjectListView):

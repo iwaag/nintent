@@ -108,53 +108,6 @@
                 {% endwith %}
             </div>
 
-            <div class="panel panel-default">
-                <div class="panel-heading">
-                    <strong>Desired Dependencies</strong>
-                </div>
-                {% with dependencies=object.dependencies.all %}
-                    {% if dependencies %}
-                        <div class="table-responsive">
-                            <table class="table table-hover table-headings">
-                                <thead>
-                                    <tr>
-                                        <th>Kind</th>
-                                        <th>Namespace</th>
-                                        <th>Name</th>
-                                        <th>Type</th>
-                                        <th>Status</th>
-                                        <th>Resolved Service</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for dependency in dependencies %}
-                                        <tr>
-                                            <td>
-                                                <a href="{{ dependency.get_absolute_url }}">{{ dependency.dependency_kind }}</a>
-                                            </td>
-                                            <td>{{ dependency.namespace }}</td>
-                                            <td>{{ dependency.name }}</td>
-                                            <td>{{ dependency.dependency_type }}</td>
-                                            <td>{{ dependency.get_resolution_status_display|default:dependency.resolution_status }}</td>
-                                            <td>
-                                                {% if dependency.resolved_service %}
-                                                    <a href="{{ dependency.resolved_service.get_absolute_url }}">{{ dependency.resolved_service }}</a>
-                                                {% else %}
-                                                    -
-                                                {% endif %}
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <div class="panel-body">
-                            No desired dependencies are registered.
-                        </div>
-                    {% endif %}
-                {% endwith %}
-            </div>
         </div>
     </div>
 </div>

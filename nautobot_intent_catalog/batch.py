@@ -10,7 +10,7 @@ SCHEMA_VERSION = "nintent.desired-state-batch.v1"
 KIND_ORDER = (
     "intent_source", "desired_node", "desired_ip_range", "desired_endpoint",
     "desired_compute_platform", "desired_compute_instance", "desired_service",
-    "desired_dependency", "desired_service_placement", "desired_node_operational_override",
+    "desired_service_placement", "desired_node_operational_override",
 )
 
 
@@ -47,7 +47,6 @@ _KEYS = {
     "desired_endpoint": ("desired_node", "name", "endpoint_type"),
     "desired_compute_platform": ("slug",), "desired_compute_instance": ("desired_node",),
     "desired_service": ("intent_source", "catalog_namespace", "catalog_metadata_name", "service_type"),
-    "desired_dependency": ("source_service", "dependency_kind", "namespace", "name"),
     "desired_service_placement": ("desired_service", "instance_name"),
     "desired_node_operational_override": ("desired_node",),
 }
@@ -60,7 +59,6 @@ _FIELDS = {
     "desired_compute_platform": {"name", "slug", "lifecycle", "control_node", "config", "realized_cluster"},
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "desired_presence", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
     "desired_service": {"intent_source", "name", "slug", "service_type", "lifecycle", "catalog_namespace", "catalog_metadata_name"},
-    "desired_dependency": {"source_service", "dependency_kind", "namespace", "name", "raw_ref", "dependency_type", "resolution_status", "resolved_service", "notes"},
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
     "desired_node_operational_override": {"desired_node", "declared_host_os", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
 }
@@ -72,7 +70,6 @@ _CREATE_REQUIRED = {
     "desired_compute_platform": {"name", "lifecycle", "control_node", "config"},
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "vcpus", "memory_mb", "root_disk_gb", "config"},
     "desired_service": {"intent_source", "name", "slug", "service_type", "catalog_namespace", "catalog_metadata_name"},
-    "desired_dependency": {"source_service", "dependency_kind", "namespace", "name", "raw_ref", "dependency_type"},
     "desired_service_placement": {"desired_service", "desired_node", "instance_name", "deployment_profile", "config_schema_version", "config"},
     "desired_node_operational_override": {"desired_node"},
 }
@@ -202,7 +199,7 @@ def _models() -> dict[str, Any]:
     return {"intent_source": models.IntentSource, "desired_node": models.DesiredNode,
             "desired_ip_range": models.DesiredIPRange, "desired_endpoint": models.DesiredEndpoint,
             "desired_compute_platform": models.DesiredComputePlatform, "desired_compute_instance": models.DesiredComputeInstance,
-            "desired_service": models.DesiredService, "desired_dependency": models.DesiredDependency,
+            "desired_service": models.DesiredService,
             "desired_service_placement": models.DesiredServicePlacement,
             "desired_node_operational_override": models.DesiredNodeOperationalOverride}
 
@@ -216,7 +213,7 @@ _ACTUAL_REFERENCE_MODELS = {
 
 
 _REFERENCE_KIND = {"desired_node": "desired_node", "control_node": "desired_node", "platform": "desired_compute_platform",
-                   "intent_source": "intent_source", "source_service": "desired_service", "resolved_service": "desired_service",
+                   "intent_source": "intent_source",
                    "desired_service": "desired_service", "desired_endpoint": "desired_endpoint",
                    "local_endpoint": "desired_endpoint", "tailscale_endpoint": "desired_endpoint"}
 
@@ -273,8 +270,7 @@ _DELETE_BLOCKERS = {
     "desired_endpoint": (("service_placements", "desired_service_placement"), ("local_operational_overrides", "desired_node_operational_override"),
                          ("tailscale_operational_overrides", "desired_node_operational_override")),
     "desired_compute_platform": (("desired_compute_instances", "desired_compute_instance"),),
-    "desired_service": (("dependencies", "desired_dependency"), ("resolved_by_dependencies", "desired_dependency"),
-                        ("placements", "desired_service_placement")),
+    "desired_service": (("placements", "desired_service_placement"),),
 }
 
 

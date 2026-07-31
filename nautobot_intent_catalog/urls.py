@@ -1,6 +1,6 @@
 """URL patterns for the Nautobot Intent Catalog App.
 
-Contains exactly 22 read-only GET routes for inspection of nintent domain models.
+Contains exactly 20 read-only GET routes for inspection of nintent domain models.
 """
 
 from django.urls import path
@@ -12,8 +12,6 @@ urlpatterns = [
     path("sources/<uuid:pk>/", views.IntentSourceView.as_view(), name="intentsource"),
     path("services/", views.DesiredServiceListView.as_view(), name="desiredservice_list"),
     path("services/<uuid:pk>/", views.DesiredServiceView.as_view(), name="desiredservice"),
-    path("dependencies/", views.DesiredDependencyListView.as_view(), name="desireddependency_list"),
-    path("dependencies/<uuid:pk>/", views.DesiredDependencyView.as_view(), name="desireddependency"),
     path("nodes/", views.DesiredNodeListView.as_view(), name="desirednode_list"),
     path("nodes/<uuid:pk>/", views.DesiredNodeView.as_view(), name="desirednode"),
     path("endpoints/", views.DesiredEndpointListView.as_view(), name="desiredendpoint_list"),

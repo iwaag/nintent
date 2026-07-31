@@ -21,7 +21,6 @@ try:
         BrainDumpDocument,
         DesiredComputeInstance,
         DesiredComputePlatform,
-        DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
@@ -73,23 +72,6 @@ else:
         service.full_clean()
         service.save()
         return service
-
-    def make_desired_dependency(**overrides) -> DesiredDependency:
-        name = _next("dep")
-        defaults = {
-            "source_service": overrides.pop("source_service", None) or make_desired_service(),
-            "dependency_kind": "service_ref",
-            "namespace": "default",
-            "name": name,
-            "raw_ref": name,
-            "dependency_type": "internal",
-            "resolution_status": DesiredDependency.RESOLUTION_UNRESOLVED,
-        }
-        defaults.update(overrides)
-        dependency = DesiredDependency(**defaults)
-        dependency.full_clean()
-        dependency.save()
-        return dependency
 
     def make_desired_endpoint(**overrides) -> DesiredEndpoint:
         name = _next("ep")

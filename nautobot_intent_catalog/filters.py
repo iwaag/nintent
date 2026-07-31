@@ -11,7 +11,6 @@ try:
         BrainDumpDocument,
         DesiredComputeInstance,
         DesiredComputePlatform,
-        DesiredDependency,
         DesiredEndpoint,
         DesiredIPRange,
         DesiredNode,
@@ -61,30 +60,6 @@ else:
             if not value.strip():
                 return queryset
             return queryset.filter(name__icontains=value) | queryset.filter(slug__icontains=value)
-
-
-    class DesiredDependencyFilterSet(NautobotFilterSet):
-        """Filters for desired dependencies."""
-
-        q = django_filters.CharFilter(method="search", label="Search")
-
-        class Meta:
-            model = DesiredDependency
-            fields = (
-                "id",
-                "source_service",
-                "dependency_kind",
-                "namespace",
-                "name",
-                "dependency_type",
-                "resolution_status",
-                "resolved_service",
-            )
-
-        def search(self, queryset, name, value):
-            if not value.strip():
-                return queryset
-            return queryset.filter(name__icontains=value) | queryset.filter(raw_ref__icontains=value)
 
 
     class DesiredNodeFilterSet(NautobotFilterSet):

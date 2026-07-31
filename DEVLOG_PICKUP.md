@@ -32,7 +32,6 @@ model detail views that also relied on default template resolution:
 ```text
 nautobot_intent_catalog/intentsource.html
 nautobot_intent_catalog/desiredservice.html
-nautobot_intent_catalog/desireddependency.html
 ```
 
 `desirednode.html` and `desiredendpoint.html` already existed because an earlier
@@ -41,7 +40,7 @@ UI compatibility fix handled only the pages that had failed at that time.
 ### Fix applied here
 
 - Added detail templates for `IntentSource`, `DesiredService`,
-  `DesiredDependency`, and `IntentEvaluation`.
+  and `IntentEvaluation`.
 - Added a local unit test that checks all default `ObjectView` detail template
   files exist, so this class of omission is caught without requiring Django or
   Nautobot in the development workspace.

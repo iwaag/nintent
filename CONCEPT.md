@@ -10,7 +10,6 @@ Intent Catalog separates desired state into a few layers:
 
 - `IntentSource`: where desired state came from.
 - `DesiredService`: a logical service or workload that should exist.
-- `DesiredDependency`: another service or resource a desired service needs.
 - `DesiredNode`: a desired node intent, classified separately from the actual
   Nautobot object types that may realize it.
 - `DesiredEndpoint`: a desired IP/DNS/port-facing endpoint on a node.
@@ -32,10 +31,7 @@ The most important current source type is `git_repository`. It is intended to
 mean:
 
 > A source repository that declares a desired service for this environment.
-> Catalog metadata in the repository is analyzed into `DesiredService` rows, and
-> declared dependencies are imported as `DesiredDependency` rows that should be
-> satisfied by another desired service, desired node, endpoint, or external
-> system.
+> Catalog metadata in the repository is analyzed into `DesiredService` rows.
 
 In practice, a GitHub or GitLab repository containing Backstage catalog metadata
 can become the source for one or more desired services.
@@ -71,44 +67,11 @@ Examples:
 - What type of service is it?
 - Who owns it?
 - What lifecycle state is intended?
-- What requirements or placement hints were detected?
+- What placement is intended?
 - When was it last analyzed from its source?
 
 The current Git analysis path primarily creates `DesiredService` rows from
 Backstage `Component` catalog entries.
-
-## DesiredDependency
-
-`DesiredDependency` represents something a `DesiredService` needs in order to be
-complete.
-
-It is usually derived from Backstage `spec.dependsOn` metadata. For example:
-
-```yaml
-spec:
-  dependsOn:
-    - component:default/auth-api
-    - resource:default/postgresql
-```
-
-This can become dependency rows such as:
-
-```text
-web-frontend -> component:default/auth-api
-web-frontend -> resource:default/postgresql
-```
-
-`DesiredDependency` is intended to preserve dependency intent even before the
-dependency is resolved. A dependency can be:
-
-- `unresolved`: known desired dependency, but no matching internal target yet.
-- `resolved`: linked to another `DesiredService`.
-- `external`: satisfied outside this app or outside this environment.
-- `ignored`: intentionally excluded from evaluation.
-
-The current implementation stores and replaces dependency rows deterministically
-during service analysis. It does not yet automatically evaluate whether every
-dependency is satisfied.
 
 ## DesiredNode
 
@@ -321,8 +284,6 @@ These boundaries are intentional in the current implementation:
 
 - `DesiredService` and `DesiredNode` are linked only through explicit
   `DesiredServicePlacement` instances; neither model embeds the other.
-- `DesiredDependency` rows are stored, but dependency satisfaction is not yet
-  automatically evaluated.
 - `DesiredNode`, `DesiredEndpoint`, `DesiredServicePlacement`, and
   `DesiredNodeOperationalOverride` can be maintained through strict YAML import
   or Nautobot CRUD screens.
@@ -332,6 +293,6 @@ These boundaries are intentional in the current implementation:
 - The app does not preserve backward compatibility with the old package name,
   old URLs, old model names, old YAML root names, or old migrations.
 
-This means the app is currently useful as an intent inventory, service/dependency
-catalog, explicit placement and execution-policy inventory, endpoint source for
+This means the app is currently useful as an intent inventory, explicit placement
+and execution-policy inventory, endpoint source for
 deterministic dnsmasq export, and storage surface for deterministic evaluations.

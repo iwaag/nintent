@@ -33,7 +33,6 @@ written atomically through `POST /api/plugins/intent-catalog/desired-state/batch
 
 | Job | Purpose |
 |---|---|
-| `Analyze Intent Sources` | Preview (default) or apply source-catalog analysis. `apply=false` (default) performs zero database writes and always writes `intent-analysis-result.json`; `apply=true` commits only analysis-owned fields (`IntentSource` status, `DesiredService` catalog fields, `DesiredDependency` rows) and preserves every operator-owned field. |
 | `Reconcile Desired IPAM Intent` | Dry-run/apply explicit-IP endpoints into `IPAddress` (`dhcp_reserved` always eligible; `static`/`external` need a matching self-observation). |
 
 `Preview Intent Source Analysis` was removed — Analyze's `apply=false` preview covers the same read-only
