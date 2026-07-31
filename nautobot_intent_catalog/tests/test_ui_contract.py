@@ -35,6 +35,8 @@ RETAINED_UI_ROUTE_NAMES = [
     "desiredcomputeinstance",
     "desiredserviceplacement_list",
     "desiredserviceplacement",
+    "desiredservicebinding_list",
+    "desiredservicebinding",
     "desirednodeoperationaloverride_list",
     "desirednodeoperationaloverride",
     "braindumpdocument_list",
@@ -91,6 +93,7 @@ MODEL_URL_PREFIXES = {
     "desiredcomputeplatform_list": ("compute-platforms", True),
     "desiredcomputeinstance_list": ("compute-instances", True),
     "desiredserviceplacement_list": ("placements", True),
+    "desiredservicebinding_list": ("service-bindings", False),
     "desirednodeoperationaloverride_list": ("operational-overrides", True),
     "braindumpdocument_list": ("braindumps", True),
     "desirediprange_list": ("ip-ranges", True),
@@ -100,8 +103,8 @@ MODEL_URL_PREFIXES = {
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_18(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 18)
+    def test_retained_routes_count_is_20(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 20)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -233,6 +236,7 @@ if HAS_DJANGO:
         make_desired_node,
         make_desired_node_operational_override,
         make_desired_service,
+        make_desired_service_binding,
         make_desired_service_placement,
     )
 
@@ -282,6 +286,13 @@ if HAS_DJANGO:
             "model": _models.DesiredServicePlacement,
             "factory": make_desired_service_placement,
             "label_field": "instance_name",
+        },
+        {
+            "list": "desiredservicebinding_list",
+            "detail": "desiredservicebinding",
+            "model": _models.DesiredServiceBinding,
+            "factory": make_desired_service_binding,
+            "label_field": "binding_name",
         },
         {
             "list": "desirednodeoperationaloverride_list",

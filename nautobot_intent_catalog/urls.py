@@ -58,4 +58,14 @@ urlpatterns = [
     path("braindumps/<uuid:pk>/", views.BrainDumpDocumentView.as_view(), name="braindumpdocument"),
     path("ip-ranges/", views.DesiredIPRangeListView.as_view(), name="desirediprange_list"),
     path("ip-ranges/<uuid:pk>/", views.DesiredIPRangeView.as_view(), name="desirediprange"),
+    path(
+        "service-bindings/",
+        views.DesiredServiceBindingListView.as_view(),
+        name="desiredservicebinding_list",
+    ),
+    path(
+        "service-bindings/<uuid:pk>/",
+        views.DesiredServiceBindingView.as_view(),
+        name="desiredservicebinding",
+    ),
 ]

@@ -16,6 +16,7 @@ try:
         DesiredNode,
         DesiredNodeOperationalOverride,
         DesiredService,
+        DesiredServiceBinding,
         DesiredServicePlacement,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -173,6 +174,26 @@ else:
                 queryset.filter(instance_name__icontains=value)
                 | queryset.filter(deployment_profile__icontains=value)
             )
+
+
+    class DesiredServiceBindingFilterSet(NautobotFilterSet):
+        """Filters for desired service bindings."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = DesiredServiceBinding
+            fields = (
+                "id",
+                "consumer_placement",
+                "binding_name",
+                "provider_service",
+            )
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return queryset.filter(binding_name__icontains=value)
 
 
     class DesiredNodeOperationalOverrideFilterSet(NautobotFilterSet):

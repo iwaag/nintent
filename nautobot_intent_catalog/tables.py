@@ -16,6 +16,7 @@ try:
         DesiredNode,
         DesiredNodeOperationalOverride,
         DesiredService,
+        DesiredServiceBinding,
         DesiredServicePlacement,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
@@ -176,6 +177,23 @@ else:
                 "desired_state",
                 "deployment_profile",
                 "config_schema_version",
+            )
+            default_columns = fields
+
+
+    class DesiredServiceBindingTable(BaseTable):
+        """Desired service binding list table."""
+
+        consumer_placement = tables.LinkColumn()
+        binding_name = tables.LinkColumn()
+        provider_service = tables.LinkColumn()
+
+        class Meta(BaseTable.Meta):
+            model = DesiredServiceBinding
+            fields = (
+                "consumer_placement",
+                "binding_name",
+                "provider_service",
             )
             default_columns = fields
 

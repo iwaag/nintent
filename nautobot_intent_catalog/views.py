@@ -11,6 +11,7 @@ try:
         DesiredIPRangeFilterSet,
         DesiredNodeFilterSet,
         DesiredNodeOperationalOverrideFilterSet,
+        DesiredServiceBindingFilterSet,
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
     )
@@ -23,6 +24,7 @@ try:
         DesiredNode,
         DesiredNodeOperationalOverride,
         DesiredService,
+        DesiredServiceBinding,
         DesiredServicePlacement,
     )
     from .tables import (
@@ -33,6 +35,7 @@ try:
         DesiredIPRangeTable,
         DesiredNodeTable,
         DesiredNodeOperationalOverrideTable,
+        DesiredServiceBindingTable,
         DesiredServiceTable,
         DesiredServicePlacementTable,
     )
@@ -149,6 +152,26 @@ else:
             "desired_service",
             "desired_node",
             "desired_endpoint",
+        )
+
+
+    class DesiredServiceBindingListView(ObjectListView):
+        """List desired service binding records."""
+
+        queryset = DesiredServiceBinding.objects.select_related(
+            "consumer_placement",
+            "provider_service",
+        )
+        filterset = DesiredServiceBindingFilterSet
+        table = DesiredServiceBindingTable
+
+
+    class DesiredServiceBindingView(ObjectView):
+        """Show one desired service binding record."""
+
+        queryset = DesiredServiceBinding.objects.select_related(
+            "consumer_placement",
+            "provider_service",
         )
 
 

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1>{{ object.consumer_placement }}: {{ object.binding_name }}</h1>
+    <div class="panel panel-default">
+        <div class="panel-heading"><strong>Desired Service Binding</strong></div>
+        <table class="table table-hover attr-table">
+            <tr><th scope="row">Consumer Placement</th><td><a href="{{ object.consumer_placement.get_absolute_url }}">{{ object.consumer_placement }}</a></td></tr>
+            <tr><th scope="row">Binding Name</th><td><code>{{ object.binding_name }}</code></td></tr>
+            <tr><th scope="row">Provider Service</th><td><a href="{{ object.provider_service.get_absolute_url }}">{{ object.provider_service }}</a></td></tr>
+        </table>
+    </div>
+</div>
+{% endblock content %}

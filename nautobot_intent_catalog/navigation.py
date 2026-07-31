@@ -51,6 +51,10 @@ else:
                             name="Service Placements",
                         ),
                         NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:desiredservicebinding_list",
+                            name="Service Bindings",
+                        ),
+                        NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desirednodeoperationaloverride_list",
                             name="Node Operational Overrides",
                         ),

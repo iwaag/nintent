@@ -20,6 +20,7 @@ class ObjectViewTemplateTests(unittest.TestCase):
             "desirednode.html",
             "desirednodeoperationaloverride.html",
             "desiredservice.html",
+            "desiredservicebinding.html",
             "desiredserviceplacement.html",
         }
 
