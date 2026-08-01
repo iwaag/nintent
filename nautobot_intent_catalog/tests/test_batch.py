@@ -63,6 +63,23 @@ class BatchDecodeTests(unittest.TestCase):
                  "values": {"resolution_status": "resolved"}},
             ]})
 
+    def test_desired_workspace_envelope_accepts_known_fields_and_rejects_unknown_ones(self):
+        dry_run, operations = decode_batch({"dry_run": True, "operations": [
+            {"op": "upsert", "kind": "desired_workspace", "key": {"slug": "pj-voxel3dprint"},
+             "values": {"name": "pj-voxel3dprint", "lifecycle": "active",
+                        "source_remote_url": "https://github.com/iwaag/pj-voxel3dprint.git",
+                        "desired_node": "agpc", "expected_path": "/home/eiji/projects/pj-voxel3dprint",
+                        "desired_presence": "present"}},
+        ]})
+        self.assertTrue(dry_run)
+        self.assertEqual(operations[0].kind, "desired_workspace")
+
+        with self.assertRaises(BatchValidationError):
+            decode_batch({"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_workspace", "key": {"slug": "pj-voxel3dprint"},
+                 "values": {"desired_branch": "main"}},
+            ]})
+
     def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
         class Query:
             def __init__(self, value):
@@ -92,7 +109,7 @@ class BatchDecodeTests(unittest.TestCase):
 try:
     from django.test import TestCase
     from django.core.exceptions import ValidationError
-    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement
+    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement, DesiredWorkspace
     from nautobot_intent_catalog.tests.factories import (
         make_desired_compute_instance,
         make_desired_compute_platform,
@@ -316,6 +333,58 @@ else:
                     with self.assertRaises(ValidationError) as ctx:
                         instance.full_clean()
                     self.assertIn("desired_presence", ctx.exception.message_dict)
+
+        def test_desired_workspace_create_required_fields_are_enforced(self):
+            node = make_desired_node()
+            document = {"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_workspace", "key": {"slug": "pj-voxel3dprint"},
+                 "values": {"name": "pj-voxel3dprint", "desired_node": node.slug}},
+            ]}
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["operations"][0]["action"], "conflict")
+            self.assertIn("expected_path", result["operations"][0]["reason"])
+            self.assertIn("source_remote_url", result["operations"][0]["reason"])
+
+        def test_desired_workspace_batch_apply_creates_and_is_readable(self):
+            node = make_desired_node()
+            document = {"dry_run": False, "operations": [
+                {"op": "upsert", "kind": "desired_workspace", "key": {"slug": "pj-voxel3dprint"},
+                 "values": {"name": "pj-voxel3dprint", "lifecycle": "active",
+                            "source_remote_url": "https://github.com/iwaag/pj-voxel3dprint.git",
+                            "desired_node": node.slug, "expected_path": "/home/eiji/projects/pj-voxel3dprint",
+                            "desired_presence": "present"}},
+            ]}
+            result = apply_batch(document).as_dict()
+            self.assertTrue(result["transaction"]["committed"])
+            workspace = DesiredWorkspace.objects.get(slug="pj-voxel3dprint")
+            self.assertEqual(workspace.desired_node_id, node.pk)
+            self.assertEqual(workspace.expected_path, "/home/eiji/projects/pj-voxel3dprint")
+
+        def test_deleting_a_node_with_a_desired_workspace_is_blocked_in_the_plan(self):
+            node = make_desired_node()
+            workspace = DesiredWorkspace.objects.create(
+                name="pj-voxel3dprint", slug="pj-voxel3dprint",
+                source_remote_url="https://github.com/iwaag/pj-voxel3dprint.git",
+                desired_node=node, expected_path="/home/eiji/projects/pj-voxel3dprint",
+            )
+            document = {"dry_run": True, "operations": [
+                {"op": "delete", "kind": "desired_node", "key": {"slug": node.slug}, "values": {}},
+            ]}
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["operations"][0]["action"], "conflict")
+            self.assertIn(f"desired_workspace:{workspace.pk}", result["operations"][0]["reason"])
+
+        def test_retiring_a_node_with_a_desired_workspace_is_rejected(self):
+            node = make_desired_node()
+            DesiredWorkspace.objects.create(
+                name="pj-voxel3dprint", slug="pj-voxel3dprint",
+                source_remote_url="https://github.com/iwaag/pj-voxel3dprint.git",
+                desired_node=node, expected_path="/home/eiji/projects/pj-voxel3dprint",
+            )
+            node.lifecycle = DesiredNode.LIFECYCLE_RETIRED
+            with self.assertRaises(ValidationError) as ctx:
+                node.full_clean()
+            self.assertIn("lifecycle", ctx.exception.message_dict)
 
     class ServiceBindingPerRowValidationTests(TestCase):
         """Step 2 per-row checks: idea-A section 4.7 binding-name declaration, old-key refusal."""

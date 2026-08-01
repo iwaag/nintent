@@ -11,6 +11,7 @@ KIND_ORDER = (
     "desired_node", "desired_ip_range", "desired_endpoint",
     "desired_compute_platform", "desired_compute_instance", "desired_service",
     "desired_service_placement", "desired_service_binding", "desired_node_operational_override",
+    "desired_workspace",
 )
 
 
@@ -50,6 +51,7 @@ _KEYS = {
     "desired_service_placement": ("desired_service", "instance_name"),
     "desired_service_binding": ("consumer_placement", "binding_name"),
     "desired_node_operational_override": ("desired_node",),
+    "desired_workspace": ("slug",),
 }
 
 _FIELDS = {
@@ -62,6 +64,7 @@ _FIELDS = {
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node", "declared_host_os", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
+    "desired_workspace": {"name", "slug", "lifecycle", "source_remote_url", "desired_node", "expected_path", "desired_presence"},
 }
 
 _CREATE_REQUIRED = {
@@ -74,6 +77,7 @@ _CREATE_REQUIRED = {
     "desired_service_placement": {"desired_service", "desired_node", "instance_name", "deployment_profile", "config_schema_version", "config"},
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node"},
+    "desired_workspace": {"name", "slug", "source_remote_url", "desired_node", "expected_path"},
 }
 
 
@@ -205,7 +209,8 @@ def _models() -> dict[str, Any]:
             "desired_service": models.DesiredService,
             "desired_service_placement": models.DesiredServicePlacement,
             "desired_service_binding": models.DesiredServiceBinding,
-            "desired_node_operational_override": models.DesiredNodeOperationalOverride}
+            "desired_node_operational_override": models.DesiredNodeOperationalOverride,
+            "desired_workspace": models.DesiredWorkspace}
 
 
 _ACTUAL_REFERENCE_MODELS = {
@@ -269,7 +274,8 @@ def _value_differs(row: Any, name: str, value: Any, models: dict[str, Any]) -> b
 _DELETE_BLOCKERS = {
     "desired_node": (("desired_endpoints", "desired_endpoint"), ("controlled_compute_platforms", "desired_compute_platform"),
                      ("desired_compute_instance", "desired_compute_instance"), ("service_placements", "desired_service_placement"),
-                     ("operational_override", "desired_node_operational_override")),
+                     ("operational_override", "desired_node_operational_override"),
+                     ("desired_workspaces", "desired_workspace")),
     "desired_endpoint": (("service_placements", "desired_service_placement"), ("local_operational_overrides", "desired_node_operational_override"),
                          ("tailscale_operational_overrides", "desired_node_operational_override")),
     "desired_compute_platform": (("desired_compute_instances", "desired_compute_instance"),),

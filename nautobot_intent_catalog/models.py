@@ -216,6 +216,19 @@ else:
                     }
                 )
 
+            if (
+                self.pk
+                and self.lifecycle == self.LIFECYCLE_RETIRED
+                and self.desired_workspaces.exists()
+            ):
+                raise ValidationError(
+                    {
+                        "lifecycle": (
+                            "A DesiredNode that hosts a DesiredWorkspace cannot be retired."
+                        )
+                    }
+                )
+
 
     @extras_features("graphql")
     class DesiredEndpoint(PrimaryModel):
@@ -1047,3 +1060,58 @@ else:
             super().clean()
             if not str(self.summary or "").strip():
                 raise ValidationError({"summary": "Summary must not be empty or whitespace-only."})
+
+
+    @extras_features("graphql")
+    class DesiredWorkspace(PrimaryModel):
+        """A composite Git checkout under active development, hosted on exactly one node."""
+
+        LIFECYCLE_PROPOSED = "proposed"
+        LIFECYCLE_PLANNED = "planned"
+        LIFECYCLE_APPROVED = "approved"
+        LIFECYCLE_ACTIVE = "active"
+        LIFECYCLE_DEPRECATED = "deprecated"
+        LIFECYCLE_RETIRED = "retired"
+        LIFECYCLE_CHOICES = (
+            (LIFECYCLE_PROPOSED, "Proposed"),
+            (LIFECYCLE_PLANNED, "Planned"),
+            (LIFECYCLE_APPROVED, "Approved"),
+            (LIFECYCLE_ACTIVE, "Active"),
+            (LIFECYCLE_DEPRECATED, "Deprecated"),
+            (LIFECYCLE_RETIRED, "Retired"),
+        )
+
+        DESIRED_PRESENCE_PRESENT = DESIRED_PRESENCE_PRESENT
+        DESIRED_PRESENCE_ABSENT = DESIRED_PRESENCE_ABSENT
+        DESIRED_PRESENCE_CHOICES = (
+            (DESIRED_PRESENCE_PRESENT, "Present"),
+            (DESIRED_PRESENCE_ABSENT, "Absent"),
+        )
+
+        name = models.CharField(max_length=255)
+        slug = models.SlugField(max_length=255, unique=True)
+        lifecycle = models.CharField(
+            max_length=64,
+            choices=LIFECYCLE_CHOICES,
+            default=LIFECYCLE_PROPOSED,
+        )
+        source_remote_url = models.CharField(max_length=255)
+        desired_node = models.ForeignKey(
+            DesiredNode,
+            on_delete=models.PROTECT,
+            related_name="desired_workspaces",
+        )
+        expected_path = models.CharField(max_length=255)
+        desired_presence = models.CharField(
+            max_length=16,
+            choices=DESIRED_PRESENCE_CHOICES,
+            default=DESIRED_PRESENCE_PRESENT,
+        )
+
+        class Meta:
+            ordering = ("name",)
+            verbose_name = "desired workspace"
+            verbose_name_plural = "desired workspaces"
+
+        def __str__(self) -> str:
+            return self.name
