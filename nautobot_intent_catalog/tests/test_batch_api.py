@@ -26,6 +26,8 @@ try:
     from nautobot.core.testing.api import APITestCase
 
     from nautobot_intent_catalog import models
+    from nautobot_intent_catalog.api.views import _BATCH_MODELS
+    from nautobot_intent_catalog.batch import KIND_ORDER
 except ImportError:  # pragma: no cover
     HAS_DJANGO = False
 else:
@@ -33,6 +35,12 @@ else:
 
 
 if HAS_DJANGO:
+
+    class BatchModelRegistryTests(unittest.TestCase):
+        """`_BATCH_MODELS` (permission check) must cover every kind `batch.py` accepts."""
+
+        def test_batch_models_covers_kind_order(self):
+            self.assertEqual(set(_BATCH_MODELS), set(KIND_ORDER))
 
     class DesiredStateBatchAPITests(APITestCase):
         """Exercise the public endpoint through Nautobot's real authentication stack."""
