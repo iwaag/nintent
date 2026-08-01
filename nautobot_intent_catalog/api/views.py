@@ -26,6 +26,7 @@ from ..models import (
 )
 from .serializers import (
     AlignmentReviewSerializer,
+    BrainDumpCompleteSerializer,
     BrainDumpDocumentSerializer,
     BrainDumpSupersedeSerializer,
 )
@@ -179,6 +180,33 @@ class BrainDumpDocumentViewSet(NautobotModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, *args, **kwargs):
+        """Directly transition one active Braindump to completed, recording why."""
+        serializer = BrainDumpCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data["reason"]
+
+        with transaction.atomic():
+            document = (
+                BrainDumpDocument.objects.select_for_update()
+                .filter(pk=self.kwargs["pk"])
+                .first()
+            )
+            if document is None:
+                return Response({"detail": "Braindump not found."}, status=status.HTTP_404_NOT_FOUND)
+            if document.status != BrainDumpDocument.STATUS_ACTIVE:
+                return Response(
+                    {"detail": f"Braindump is not active (status={document.status})."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            document.status = BrainDumpDocument.STATUS_COMPLETED
+            document.completion_reason = reason
+            document.validated_save()
+
+        return Response(BrainDumpDocumentSerializer(document, context={"request": request}).data)
+
+
 class BraindumpPurgeView(APIView):
     """Plan or immediately delete one exact superseded Braindump."""
 
@@ -200,12 +228,12 @@ class BraindumpPurgeView(APIView):
             )
             if document is None:
                 return Response({"outcome": "already_purged", "braindump_id": str(braindump_id)})
-            if document.status != BrainDumpDocument.STATUS_SUPERSEDED:
+            if document.status not in (BrainDumpDocument.STATUS_SUPERSEDED, BrainDumpDocument.STATUS_COMPLETED):
                 return Response(
                     {
                         "outcome": "ineligible",
                         "braindump_id": str(document.pk),
-                        "reason": "Braindump must have status=superseded.",
+                        "reason": "Braindump must have status=superseded or status=completed.",
                     },
                     status=status.HTTP_409_CONFLICT,
                 )

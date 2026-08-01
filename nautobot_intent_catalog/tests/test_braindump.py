@@ -292,6 +292,9 @@ else:
         def _purge_url(self, braindump):
             return f"{self.braindumps_url}{braindump.pk}/purge/"
 
+        def _complete_url(self, braindump):
+            return f"{self.braindumps_url}{braindump.pk}/complete/"
+
         def test_purge_plan_is_read_only_and_includes_review_presence(self):
             braindump = _make_braindump()
             braindump.status = BrainDumpDocument.STATUS_SUPERSEDED
@@ -347,6 +350,52 @@ else:
 
             self.assertEqual(repeated.status_code, status.HTTP_200_OK)
             self.assertEqual(repeated.data, {"outcome": "already_purged", "braindump_id": str(braindump.pk)})
+
+        def test_complete_transitions_active_row_and_records_reason(self):
+            braindump = _make_braindump()
+
+            response = self.client.post(
+                self._complete_url(braindump), {"reason": "Node retired; wish resolved."}, format="json", **self.header
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["status"], BrainDumpDocument.STATUS_COMPLETED)
+            self.assertEqual(response.data["completion_reason"], "Node retired; wish resolved.")
+            braindump.refresh_from_db()
+            self.assertEqual(braindump.status, BrainDumpDocument.STATUS_COMPLETED)
+            self.assertEqual(braindump.completion_reason, "Node retired; wish resolved.")
+
+        def test_complete_rejects_non_active_row(self):
+            braindump = _make_braindump()
+            braindump.status = BrainDumpDocument.STATUS_SUPERSEDED
+            braindump.save()
+
+            response = self.client.post(self._complete_url(braindump), {"reason": "done"}, format="json", **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+            braindump.refresh_from_db()
+            self.assertEqual(braindump.status, BrainDumpDocument.STATUS_SUPERSEDED)
+
+        def test_complete_rejects_blank_reason(self):
+            braindump = _make_braindump()
+
+            response = self.client.post(self._complete_url(braindump), {"reason": "   "}, format="json", **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            braindump.refresh_from_db()
+            self.assertEqual(braindump.status, BrainDumpDocument.STATUS_ACTIVE)
+
+        def test_purge_accepts_completed_status(self):
+            braindump = _make_braindump()
+            braindump.status = BrainDumpDocument.STATUS_COMPLETED
+            braindump.completion_reason = "done"
+            braindump.save()
+
+            response = self.client.delete(self._purge_url(braindump), **self.header)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["outcome"], "purged")
+            self.assertFalse(BrainDumpDocument.objects.filter(pk=braindump.pk).exists())
 
         def test_supersede_creates_active_replacement_and_changes_exact_old_rows(self):
             first = _make_braindump(title="Old one")

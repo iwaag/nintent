@@ -987,15 +987,18 @@ else:
 
         STATUS_ACTIVE = "active"
         STATUS_SUPERSEDED = "superseded"
+        STATUS_COMPLETED = "completed"
         STATUS_CHOICES = (
             (STATUS_ACTIVE, "Active"),
             (STATUS_SUPERSEDED, "Superseded"),
+            (STATUS_COMPLETED, "Completed"),
         )
 
         title = models.CharField(max_length=255)
         body = models.TextField()
         authorship = models.CharField(max_length=32, choices=AUTHORSHIP_CHOICES)
         status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+        completion_reason = models.TextField(blank=True, default="")
 
         class Meta:
             ordering = ("-last_updated", "title")

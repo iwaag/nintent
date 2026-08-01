@@ -24,8 +24,8 @@ class BrainDumpDocumentSerializer(NautobotModelSerializer):
 
     class Meta:
         model = BrainDumpDocument
-        fields = ("id", "title", "body", "authorship", "status", "created", "last_updated")
-        read_only_fields = ("id", "status", "created", "last_updated")
+        fields = ("id", "title", "body", "authorship", "status", "completion_reason", "created", "last_updated")
+        read_only_fields = ("id", "status", "completion_reason", "created", "last_updated")
 
     def to_internal_value(self, data):
         allowed = {"title", "body", "authorship"}
@@ -53,6 +53,17 @@ class BrainDumpSupersedeSerializer(serializers.Serializer):
             if not attrs[field_name].strip():
                 raise serializers.ValidationError({field_name: "This field must not be blank."})
         return attrs
+
+
+class BrainDumpCompleteSerializer(serializers.Serializer):
+    """Request shape for the direct active-to-completed status transition."""
+
+    reason = serializers.CharField(trim_whitespace=False)
+
+    def validate_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("This field must not be blank.")
+        return value
 
 
 class AlignmentReviewSerializer(NautobotModelSerializer):
