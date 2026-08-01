@@ -28,6 +28,7 @@ try:
         DesiredService,
         DesiredServiceBinding,
         DesiredServicePlacement,
+        DesiredWorkspace,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -165,6 +166,23 @@ else:
         ip_range.full_clean()
         ip_range.save()
         return ip_range
+
+    def make_desired_workspace(**overrides) -> DesiredWorkspace:
+        slug = _next("workspace")
+        defaults = {
+            "name": slug,
+            "slug": slug,
+            "lifecycle": DesiredWorkspace.LIFECYCLE_ACTIVE,
+            "source_remote_url": "git@example.com:org/repo.git",
+            "desired_node": overrides.pop("desired_node", None) or make_desired_node(),
+            "expected_path": "/home/agent/workspaces/repo",
+            "desired_presence": DesiredWorkspace.DESIRED_PRESENCE_PRESENT,
+        }
+        defaults.update(overrides)
+        workspace = DesiredWorkspace(**defaults)
+        workspace.full_clean()
+        workspace.save()
+        return workspace
 
     def make_braindump(**overrides) -> BrainDumpDocument:
         defaults = {

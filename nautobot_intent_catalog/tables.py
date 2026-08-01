@@ -18,6 +18,7 @@ try:
         DesiredService,
         DesiredServiceBinding,
         DesiredServicePlacement,
+        DesiredWorkspace,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -270,4 +271,30 @@ else:
                 "range_policy",
                 "lifecycle",
                 "generate_dnsmasq",
+            )
+
+
+    class DesiredWorkspaceTable(BaseTable):
+        """Desired workspace list table."""
+
+        name = tables.LinkColumn()
+        desired_node = tables.LinkColumn()
+
+        class Meta(BaseTable.Meta):
+            model = DesiredWorkspace
+            fields = (
+                "name",
+                "slug",
+                "desired_node",
+                "source_remote_url",
+                "expected_path",
+                "lifecycle",
+                "desired_presence",
+            )
+            default_columns = (
+                "name",
+                "desired_node",
+                "source_remote_url",
+                "lifecycle",
+                "desired_presence",
             )

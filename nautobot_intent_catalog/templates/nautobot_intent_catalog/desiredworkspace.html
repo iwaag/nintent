@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>{{ object.name }}</h1>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Desired Workspace</strong>
+                </div>
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">Name</th>
+                        <td>{{ object.name }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Slug</th>
+                        <td><code>{{ object.slug }}</code></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Node</th>
+                        <td>{{ object.desired_node|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Source Remote URL</th>
+                        <td>{{ object.source_remote_url }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Expected Path</th>
+                        <td>{{ object.expected_path }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Lifecycle</th>
+                        <td>{{ object.get_lifecycle_display|default:object.lifecycle }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Presence</th>
+                        <td>{{ object.get_desired_presence_display|default:object.desired_presence }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

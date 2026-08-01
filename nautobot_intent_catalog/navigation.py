@@ -62,6 +62,10 @@ else:
                             link="plugins:nautobot_intent_catalog:desirediprange_list",
                             name="Desired IP Ranges",
                         ),
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:desiredworkspace_list",
+                            name="Desired Workspaces",
+                        ),
                     ),
                 ),
             ),

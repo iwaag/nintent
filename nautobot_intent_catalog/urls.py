@@ -68,4 +68,6 @@ urlpatterns = [
         views.DesiredServiceBindingView.as_view(),
         name="desiredservicebinding",
     ),
+    path("workspaces/", views.DesiredWorkspaceListView.as_view(), name="desiredworkspace_list"),
+    path("workspaces/<uuid:pk>/", views.DesiredWorkspaceView.as_view(), name="desiredworkspace"),
 ]

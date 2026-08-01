@@ -14,6 +14,7 @@ try:
         DesiredServiceBindingFilterSet,
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
+        DesiredWorkspaceFilterSet,
     )
     from .models import (
         BrainDumpDocument,
@@ -26,6 +27,7 @@ try:
         DesiredService,
         DesiredServiceBinding,
         DesiredServicePlacement,
+        DesiredWorkspace,
     )
     from .tables import (
         BrainDumpDocumentTable,
@@ -38,6 +40,7 @@ try:
         DesiredServiceBindingTable,
         DesiredServiceTable,
         DesiredServicePlacementTable,
+        DesiredWorkspaceTable,
     )
 except ImportError:  # pragma: no cover - Nautobot is unavailable in local unit tests.
     pass
@@ -227,3 +230,17 @@ else:
         """Show one Braindump and its current Alignment Review, in separate panels."""
 
         queryset = BrainDumpDocument.objects.select_related("alignment_review")
+
+
+    class DesiredWorkspaceListView(ObjectListView):
+        """List desired workspace records."""
+
+        queryset = DesiredWorkspace.objects.select_related("desired_node")
+        filterset = DesiredWorkspaceFilterSet
+        table = DesiredWorkspaceTable
+
+
+    class DesiredWorkspaceView(ObjectView):
+        """Show one desired workspace record."""
+
+        queryset = DesiredWorkspace.objects.select_related("desired_node")

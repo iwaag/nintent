@@ -43,6 +43,8 @@ RETAINED_UI_ROUTE_NAMES = [
     "braindumpdocument",
     "desirediprange_list",
     "desirediprange",
+    "desiredworkspace_list",
+    "desiredworkspace",
 ]
 
 REMOVED_UI_ROUTE_NAMES = [
@@ -97,14 +99,15 @@ MODEL_URL_PREFIXES = {
     "desirednodeoperationaloverride_list": ("operational-overrides", True),
     "braindumpdocument_list": ("braindumps", True),
     "desirediprange_list": ("ip-ranges", True),
+    "desiredworkspace_list": ("workspaces", False),
 }
 
 
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_20(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 20)
+    def test_retained_routes_count_is_22(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 22)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -238,6 +241,7 @@ if HAS_DJANGO:
         make_desired_service,
         make_desired_service_binding,
         make_desired_service_placement,
+        make_desired_workspace,
     )
 
     # One entry per retained model: list/detail route names, the model class, its factory, and
@@ -313,6 +317,13 @@ if HAS_DJANGO:
             "detail": "desirediprange",
             "model": _models.DesiredIPRange,
             "factory": make_desired_ip_range,
+            "label_field": "name",
+        },
+        {
+            "list": "desiredworkspace_list",
+            "detail": "desiredworkspace",
+            "model": _models.DesiredWorkspace,
+            "factory": make_desired_workspace,
             "label_field": "name",
         },
     ]
