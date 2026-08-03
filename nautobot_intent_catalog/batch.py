@@ -63,7 +63,7 @@ _FIELDS = {
     "desired_service": {"name", "slug", "lifecycle"},
     "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
-    "desired_node_operational_override": {"desired_node", "declared_host_os", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
+    "desired_node_operational_override": {"desired_node", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
     "desired_workspace": {"name", "slug", "lifecycle", "source_remote_url", "desired_node", "expected_path", "desired_presence"},
 }
 

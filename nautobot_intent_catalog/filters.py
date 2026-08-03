@@ -207,7 +207,6 @@ else:
             fields = (
                 "id",
                 "desired_node",
-                "declared_host_os",
                 "connection_path",
                 "local_endpoint",
                 "tailscale_endpoint",

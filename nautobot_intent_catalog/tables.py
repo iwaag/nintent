@@ -203,13 +203,11 @@ else:
         """Desired node operational override list table."""
 
         desired_node = tables.LinkColumn()
-        declared_host_os = tables.LinkColumn()
 
         class Meta(BaseTable.Meta):
             model = DesiredNodeOperationalOverride
             fields = (
                 "desired_node",
-                "declared_host_os",
                 "connection_path",
                 "ansible_port",
                 "power_control",

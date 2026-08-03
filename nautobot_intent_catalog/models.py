@@ -812,9 +812,6 @@ else:
     class DesiredNodeOperationalOverride(PrimaryModel):
         """Optional genuine exceptions to nctl's derived node operation values."""
 
-        HOST_OS_HAOS = "haos"
-        DECLARED_HOST_OS_CHOICES = ((HOST_OS_HAOS, "Home Assistant OS"),)
-
         CONNECTION_LOCAL = "local"
         CONNECTION_TAILSCALE = "tailscale"
         CONNECTION_PATH_CHOICES = (
@@ -835,12 +832,6 @@ else:
             DesiredNode,
             on_delete=models.PROTECT,
             related_name="operational_override",
-        )
-        declared_host_os = models.CharField(
-            max_length=32,
-            choices=DECLARED_HOST_OS_CHOICES,
-            blank=True,
-            null=True,
         )
         connection_path = models.CharField(
             max_length=32,
@@ -908,14 +899,10 @@ else:
                 if not _endpoint_is_usable_local(self.local_endpoint):
                     errors["local_endpoint"] = "Local endpoint requires an IP, DNS, or mDNS address."
 
-            if self.declared_host_os == self.HOST_OS_HAOS and self.power_control not in (None, self.POWER_NONE):
-                errors["power_control"] = "HAOS permits only power_control=none."
-
             if self.ansible_port is not None and not 1 <= self.ansible_port <= 65535:
                 errors["ansible_port"] = "Ansible port must be between 1 and 65535."
             meaningful = any(
                 (
-                    self.declared_host_os,
                     self.connection_path == self.CONNECTION_TAILSCALE,
                     self.local_endpoint_id,
                     self.tailscale_endpoint_id,

@@ -7,7 +7,6 @@
         <div class="panel-heading"><strong>Desired Node Operational Override</strong></div>
         <table class="table table-hover attr-table">
             <tr><th scope="row">Desired Node</th><td><a href="{{ object.desired_node.get_absolute_url }}">{{ object.desired_node }}</a></td></tr>
-            <tr><th scope="row">Declared Host OS</th><td>{{ object.declared_host_os|default:"derived" }}</td></tr>
             <tr><th scope="row">Connection Path</th><td>{{ object.connection_path|default:"derived" }}</td></tr>
             <tr><th scope="row">Local Endpoint</th><td>{% if object.local_endpoint %}<a href="{{ object.local_endpoint.get_absolute_url }}">{{ object.local_endpoint }}</a>{% else %}-{% endif %}</td></tr>
             <tr><th scope="row">Tailscale Endpoint</th><td>{% if object.tailscale_endpoint %}<a href="{{ object.tailscale_endpoint.get_absolute_url }}">{{ object.tailscale_endpoint }}</a>{% else %}-{% endif %}</td></tr>
