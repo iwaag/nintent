@@ -54,6 +54,17 @@ try:
         validate_root_disk_gb,
         validate_vcpus,
     )
+    from .workflow_episode_contract import (
+        ALLOWED_TRANSITIONS as WORKFLOW_EPISODE_ALLOWED_TRANSITIONS,
+        STATUS_CANDIDATE as WORKFLOW_EPISODE_STATUS_CANDIDATE,
+        STATUS_CHOICES as WORKFLOW_EPISODE_STATUS_CHOICES,
+        STATUS_DISMISSED as WORKFLOW_EPISODE_STATUS_DISMISSED,
+        STATUS_RESOLVED as WORKFLOW_EPISODE_STATUS_RESOLVED,
+        STATUS_SELECTED as WORKFLOW_EPISODE_STATUS_SELECTED,
+        WorkflowEpisodeContractError,
+        validate_raw_data_shape as validate_workflow_episode_raw_data_shape,
+        validate_transition as validate_workflow_episode_transition,
+    )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     PrimaryModel = object  # type: ignore[assignment]
 else:
@@ -1102,3 +1113,50 @@ else:
 
         def __str__(self) -> str:
             return self.name
+
+
+    @extras_features("graphql")
+    class WorkflowEpisode(PrimaryModel):
+        """A workflow-improvement candidate: self-report, assessment, references, and resolution in one record."""
+
+        STATUS_CANDIDATE = WORKFLOW_EPISODE_STATUS_CANDIDATE
+        STATUS_SELECTED = WORKFLOW_EPISODE_STATUS_SELECTED
+        STATUS_RESOLVED = WORKFLOW_EPISODE_STATUS_RESOLVED
+        STATUS_DISMISSED = WORKFLOW_EPISODE_STATUS_DISMISSED
+        STATUS_CHOICES = WORKFLOW_EPISODE_STATUS_CHOICES
+
+        ALLOWED_TRANSITIONS = WORKFLOW_EPISODE_ALLOWED_TRANSITIONS
+
+        title = models.CharField(max_length=255)
+        status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_CANDIDATE)
+        raw_data = models.JSONField(default=dict, blank=True)
+
+        class Meta:
+            ordering = ("-last_updated", "title")
+            verbose_name = "workflow episode"
+            verbose_name_plural = "workflow episodes"
+
+        def __str__(self) -> str:
+            return self.title
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:workflowepisode", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            if not str(self.title or "").strip():
+                errors["title"] = "Title must not be empty or whitespace-only."
+            if errors:
+                raise ValidationError(errors)
+            try:
+                validate_workflow_episode_raw_data_shape(self.raw_data)
+            except WorkflowEpisodeContractError as exc:
+                raise ValidationError({"raw_data": str(exc)}) from exc
+
+        def apply_transition(self, new_status: str) -> None:
+            try:
+                validate_workflow_episode_transition(self.status, new_status)
+            except WorkflowEpisodeContractError as exc:
+                raise ValidationError({"status": str(exc)}) from exc
+            self.status = new_status
