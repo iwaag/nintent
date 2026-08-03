@@ -3,7 +3,8 @@
 from nautobot.apps.api import NautobotModelSerializer
 from rest_framework import serializers
 
-from ..models import AlignmentReview, BrainDumpDocument
+from ..models import AlignmentReview, BrainDumpDocument, WorkflowEpisode
+from ..workflow_episode_contract import WorkflowEpisodeContractError, validate_raw_data_shape
 
 
 def _check_allowed_mutation_keys(data: dict, allowed_keys: set[str], operation: str = "mutation") -> None:
@@ -84,3 +85,34 @@ class AlignmentReviewSerializer(NautobotModelSerializer):
             allowed = {"summary"}
         _check_allowed_mutation_keys(data, allowed, "AlignmentReview mutation")
         return super().to_internal_value(data)
+
+
+class WorkflowEpisodeSerializer(NautobotModelSerializer):
+    """Serializer for workflow-improvement episodes. Status and raw_data namespaces are not
+    writable here — status changes go through the transition actions, and each raw_data
+    namespace is written through its own action (decision 5: never replace the whole raw_data).
+    """
+
+    title = serializers.CharField(max_length=255, trim_whitespace=False)
+
+    class Meta:
+        model = WorkflowEpisode
+        fields = ("id", "title", "status", "raw_data", "created", "last_updated")
+        read_only_fields = ("id", "status", "created", "last_updated")
+
+    def to_internal_value(self, data):
+        allowed = {"title", "raw_data"}
+        _check_allowed_mutation_keys(data, allowed, "WorkflowEpisode mutation")
+        return super().to_internal_value(data)
+
+    def validate_raw_data(self, value):
+        try:
+            validate_raw_data_shape(value)
+        except WorkflowEpisodeContractError as exc:
+            raise serializers.ValidationError(str(exc))
+        return value
+
+    def validate_title(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("This field must not be blank.")
+        return value

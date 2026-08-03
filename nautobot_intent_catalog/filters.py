@@ -19,6 +19,7 @@ try:
         DesiredServiceBinding,
         DesiredServicePlacement,
         DesiredWorkspace,
+        WorkflowEpisode,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -298,3 +299,18 @@ else:
                 | queryset.filter(slug__icontains=value)
                 | queryset.filter(source_remote_url__icontains=value)
             )
+
+
+    class WorkflowEpisodeFilterSet(NautobotFilterSet):
+        """Filters for workflow-improvement episodes."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = WorkflowEpisode
+            fields = ("id", "title", "status")
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return queryset.filter(title__icontains=value)

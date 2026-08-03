@@ -19,16 +19,20 @@ from ..operations.retirement_prune import RetirementPruneError, delete as delete
 from ..filters import (
     AlignmentReviewFilterSet,
     BrainDumpDocumentFilterSet,
+    WorkflowEpisodeFilterSet,
 )
 from ..models import (
     AlignmentReview,
     BrainDumpDocument,
+    WorkflowEpisode,
 )
+from ..workflow_episode_contract import WorkflowEpisodeContractError, validate_transition
 from .serializers import (
     AlignmentReviewSerializer,
     BrainDumpCompleteSerializer,
     BrainDumpDocumentSerializer,
     BrainDumpSupersedeSerializer,
+    WorkflowEpisodeSerializer,
 )
 from .yaml_input import YAMLDocumentError, load_yaml_document
 
@@ -273,3 +277,69 @@ class AlignmentReviewViewSet(NautobotModelViewSet):
     @extend_schema(request=BulkOperationSerializer(many=True))
     def bulk_destroy(self, request, *args, **kwargs):
         return HttpResponseNotAllowed(["GET", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+
+
+class WorkflowEpisodeViewSet(NautobotModelViewSet):
+    """Read/create API endpoint for workflow-improvement episodes.
+
+    Status transitions and per-namespace raw_data writes are dedicated POST actions
+    (``select``/``resolve``/``dismiss`` and one action per raw_data namespace); there is no
+    generic update route, so PATCH/PUT can never bypass those rules (decisions 3 and 5).
+    """
+
+    queryset = WorkflowEpisode.objects.all()
+    serializer_class = WorkflowEpisodeSerializer
+    filterset_class = WorkflowEpisodeFilterSet
+    http_method_names = ["get", "post", "head", "options"]
+
+    def _transition(self, request, new_status):
+        with transaction.atomic():
+            episode = WorkflowEpisode.objects.select_for_update().filter(pk=self.kwargs["pk"]).first()
+            if episode is None:
+                return Response({"detail": "WorkflowEpisode not found."}, status=status.HTTP_404_NOT_FOUND)
+            try:
+                validate_transition(episode.status, new_status)
+            except WorkflowEpisodeContractError as exc:
+                return Response({"status": [str(exc)]}, status=status.HTTP_409_CONFLICT)
+            episode.status = new_status
+            episode.validated_save()
+        return Response(WorkflowEpisodeSerializer(episode, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="select")
+    def select(self, request, *args, **kwargs):
+        return self._transition(request, WorkflowEpisode.STATUS_SELECTED)
+
+    @action(detail=True, methods=["post"], url_path="resolve")
+    def resolve(self, request, *args, **kwargs):
+        return self._transition(request, WorkflowEpisode.STATUS_RESOLVED)
+
+    @action(detail=True, methods=["post"], url_path="dismiss")
+    def dismiss(self, request, *args, **kwargs):
+        return self._transition(request, WorkflowEpisode.STATUS_DISMISSED)
+
+    def _write_namespace(self, request, namespace):
+        if not isinstance(request.data, dict):
+            return Response({namespace: ["This field must be a JSON object."]}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            episode = WorkflowEpisode.objects.select_for_update().filter(pk=self.kwargs["pk"]).first()
+            if episode is None:
+                return Response({"detail": "WorkflowEpisode not found."}, status=status.HTTP_404_NOT_FOUND)
+            episode.raw_data = {**episode.raw_data, namespace: dict(request.data)}
+            episode.validated_save()
+        return Response(WorkflowEpisodeSerializer(episode, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="report")
+    def write_report(self, request, *args, **kwargs):
+        return self._write_namespace(request, "report")
+
+    @action(detail=True, methods=["post"], url_path="assessment")
+    def write_assessment(self, request, *args, **kwargs):
+        return self._write_namespace(request, "assessment")
+
+    @action(detail=True, methods=["post"], url_path="references")
+    def write_references(self, request, *args, **kwargs):
+        return self._write_namespace(request, "references")
+
+    @action(detail=True, methods=["post"], url_path="resolution")
+    def write_resolution(self, request, *args, **kwargs):
+        return self._write_namespace(request, "resolution")

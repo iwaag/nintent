@@ -8,6 +8,7 @@ from . import views
 router = OrderedDefaultRouter(view_name="Intent Catalog")
 router.register("braindumps", views.BrainDumpDocumentViewSet)
 router.register("alignment-reviews", views.AlignmentReviewViewSet)
+router.register("workflow-episodes", views.WorkflowEpisodeViewSet)
 
 urlpatterns = [
     path("desired-state/batch/", views.DesiredStateBatchView.as_view(), name="desired-state-batch"),
