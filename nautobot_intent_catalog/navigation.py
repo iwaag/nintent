@@ -1,6 +1,6 @@
 """Navigation items for the Nautobot Intent Catalog App.
 
-Only contains links to the ten retained read-only list pages.
+Only contains links to the eleven retained read-only list pages.
 """
 
 try:
@@ -19,6 +19,16 @@ else:
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:braindumpdocument_list",
                             name="Braindumps",
+                        ),
+                    ),
+                ),
+                NavMenuGroup(
+                    name="Workflow Improvement",
+                    weight=150,
+                    items=(
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:workflowepisode_list",
+                            name="Workflow Episodes",
                         ),
                     ),
                 ),

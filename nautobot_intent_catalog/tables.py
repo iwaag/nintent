@@ -19,6 +19,7 @@ try:
         DesiredServiceBinding,
         DesiredServicePlacement,
         DesiredWorkspace,
+        WorkflowEpisode,
     )
 except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in local unit tests.
     pass
@@ -296,3 +297,14 @@ else:
                 "lifecycle",
                 "desired_presence",
             )
+
+
+    class WorkflowEpisodeTable(BaseTable):
+        """Workflow-improvement episode list table."""
+
+        title = tables.LinkColumn()
+
+        class Meta(BaseTable.Meta):
+            model = WorkflowEpisode
+            fields = ("id", "title", "status", "created", "last_updated")
+            default_columns = ("title", "status", "created", "last_updated")

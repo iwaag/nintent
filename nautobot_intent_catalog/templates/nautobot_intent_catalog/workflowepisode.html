@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>{{ object.title }}</h1>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Workflow Episode</strong>
+                </div>
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">Title</th>
+                        <td>{{ object.title }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Status</th>
+                        <td>{{ object.get_status_display|default:object.status }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Created</th>
+                        <td>{{ object.created }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Updated</th>
+                        <td>{{ object.last_updated }}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Report</strong>
+                </div>
+                {% if object.raw_data.report %}
+                    <table class="table table-hover attr-table">
+                        {% for key, value in object.raw_data.report.items %}
+                        <tr>
+                            <th scope="row">{{ key }}</th>
+                            <td><div style="white-space: pre-wrap;">{{ value }}</div></td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <div class="panel-body"><p>Not yet recorded.</p></div>
+                {% endif %}
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Assessment</strong>
+                </div>
+                {% if object.raw_data.assessment %}
+                    <table class="table table-hover attr-table">
+                        {% for key, value in object.raw_data.assessment.items %}
+                        <tr>
+                            <th scope="row">{{ key }}</th>
+                            <td><div style="white-space: pre-wrap;">{{ value }}</div></td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <div class="panel-body"><p>Not yet recorded.</p></div>
+                {% endif %}
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>References</strong>
+                </div>
+                {% if object.raw_data.references %}
+                    <table class="table table-hover attr-table">
+                        {% for key, value in object.raw_data.references.items %}
+                        <tr>
+                            <th scope="row">{{ key }}</th>
+                            <td><div style="white-space: pre-wrap;">{{ value }}</div></td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <div class="panel-body"><p>Not yet recorded.</p></div>
+                {% endif %}
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Resolution</strong>
+                </div>
+                {% if object.raw_data.resolution %}
+                    <table class="table table-hover attr-table">
+                        {% for key, value in object.raw_data.resolution.items %}
+                        <tr>
+                            <th scope="row">{{ key }}</th>
+                            <td><div style="white-space: pre-wrap;">{{ value }}</div></td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <div class="panel-body"><p>Not yet recorded.</p></div>
+                {% endif %}
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Raw raw_data</strong>
+                </div>
+                <div class="panel-body">
+                    <pre>{{ object.raw_data }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

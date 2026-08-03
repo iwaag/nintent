@@ -15,6 +15,7 @@ try:
         DesiredServiceFilterSet,
         DesiredServicePlacementFilterSet,
         DesiredWorkspaceFilterSet,
+        WorkflowEpisodeFilterSet,
     )
     from .models import (
         BrainDumpDocument,
@@ -28,6 +29,7 @@ try:
         DesiredServiceBinding,
         DesiredServicePlacement,
         DesiredWorkspace,
+        WorkflowEpisode,
     )
     from .tables import (
         BrainDumpDocumentTable,
@@ -41,6 +43,7 @@ try:
         DesiredServiceTable,
         DesiredServicePlacementTable,
         DesiredWorkspaceTable,
+        WorkflowEpisodeTable,
     )
 except ImportError:  # pragma: no cover - Nautobot is unavailable in local unit tests.
     pass
@@ -244,3 +247,27 @@ else:
         """Show one desired workspace record."""
 
         queryset = DesiredWorkspace.objects.select_related("desired_node")
+
+
+    class WorkflowEpisodeListView(ObjectListView):
+        """List workflow-improvement episodes.
+
+        Default filter shows ``candidate`` + ``selected`` only, so resolved/dismissed
+        episodes do not clutter the survey view (roadmap "Useful facts for implementers").
+        """
+
+        queryset = WorkflowEpisode.objects.all()
+        filterset = WorkflowEpisodeFilterSet
+        table = WorkflowEpisodeTable
+
+        def get_filter_params(self, request):
+            params = super().get_filter_params(request)
+            if "status" not in params:
+                params["status"] = [WorkflowEpisode.STATUS_CANDIDATE, WorkflowEpisode.STATUS_SELECTED]
+            return params
+
+
+    class WorkflowEpisodeView(ObjectView):
+        """Show one workflow-improvement episode's report/assessment/references/resolution."""
+
+        queryset = WorkflowEpisode.objects.all()

@@ -70,4 +70,6 @@ urlpatterns = [
     ),
     path("workspaces/", views.DesiredWorkspaceListView.as_view(), name="desiredworkspace_list"),
     path("workspaces/<uuid:pk>/", views.DesiredWorkspaceView.as_view(), name="desiredworkspace"),
+    path("workflow-episodes/", views.WorkflowEpisodeListView.as_view(), name="workflowepisode_list"),
+    path("workflow-episodes/<uuid:pk>/", views.WorkflowEpisodeView.as_view(), name="workflowepisode"),
 ]

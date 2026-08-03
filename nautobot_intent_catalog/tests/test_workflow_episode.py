@@ -199,3 +199,95 @@ else:
                 self._action_url(episode, "report"), ["not", "an", "object"], format="json", **self.header
             )
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    class WorkflowEpisodeViewTests(TestCase):
+        """Read-only UI route, section rendering, escaping, and absence-of-mutation coverage."""
+
+        user_permissions = ("nautobot_intent_catalog.view_workflowepisode",)
+
+        def test_list_view_shows_episode(self):
+            """Nautobot 3.1's ObjectListView renders table rows only for an htmx request;
+            a plain page load intentionally serves an empty table shell first."""
+
+            _make_episode(title="Listed Episode")
+            response = self.client.get(
+                reverse("plugins:nautobot_intent_catalog:workflowepisode_list"), HTTP_HX_REQUEST="true"
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "Listed Episode")
+
+        def test_list_view_default_filter_hides_resolved_and_dismissed(self):
+            candidate = _make_episode(title="Still Candidate")
+            resolved = _make_episode(title="Already Resolved")
+            resolved.status = WorkflowEpisode.STATUS_RESOLVED
+            resolved.save()
+
+            response = self.client.get(
+                reverse("plugins:nautobot_intent_catalog:workflowepisode_list"), HTTP_HX_REQUEST="true"
+            )
+            self.assertContains(response, candidate.title)
+            self.assertNotContains(response, resolved.title)
+
+        def test_list_view_explicit_status_filter_can_reach_resolved(self):
+            resolved = _make_episode(title="Reachable Resolved")
+            resolved.status = WorkflowEpisode.STATUS_RESOLVED
+            resolved.save()
+
+            response = self.client.get(
+                reverse("plugins:nautobot_intent_catalog:workflowepisode_list"),
+                {"status": WorkflowEpisode.STATUS_RESOLVED},
+                HTTP_HX_REQUEST="true",
+            )
+            self.assertContains(response, resolved.title)
+
+        def test_detail_view_renders_all_four_namespaces(self):
+            episode = _make_episode(
+                raw_data={
+                    "report": {"summary": "self-report summary"},
+                    "assessment": {"verdict": "promote candidate"},
+                    "references": {"session_id": "sess-123"},
+                    "resolution": {"outcome": "workflow updated"},
+                }
+            )
+            response = self.client.get(episode.get_absolute_url())
+            self.assertContains(response, "self-report summary")
+            self.assertContains(response, "promote candidate")
+            self.assertContains(response, "sess-123")
+            self.assertContains(response, "workflow updated")
+
+        def test_detail_view_shows_not_yet_recorded_for_empty_namespaces(self):
+            episode = _make_episode()
+            response = self.client.get(episode.get_absolute_url())
+            self.assertContains(response, "Not yet recorded.")
+
+        def test_detail_view_escapes_script_and_html_looking_content(self):
+            episode = _make_episode(
+                title="<script>alert(1)</script>",
+                raw_data={"report": {"summary": "<b>bold</b> $(rm -rf /) 日本語のテスト"}},
+            )
+            response = self.client.get(episode.get_absolute_url())
+            content = response.content.decode()
+            self.assertNotIn("<script>alert(1)</script>", content)
+            self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", content)
+
+        def test_detail_view_has_no_mutation_control(self):
+            episode = _make_episode()
+            response = self.client.get(episode.get_absolute_url())
+            content = response.content.decode()
+            for needle in ('type="submit"', "csrfmiddlewaretoken", "Add Workflow Episode", "Edit", "Delete"):
+                self.assertNotIn(needle, content)
+
+        def test_post_to_list_and_detail_pages_does_not_mutate(self):
+            episode = _make_episode(title="Untouched")
+            before_count = WorkflowEpisode.objects.count()
+            list_url = reverse("plugins:nautobot_intent_catalog:workflowepisode_list")
+            detail_url = episode.get_absolute_url()
+
+            list_response = self.client.post(list_url, {"title": "mutation-attempt"})
+            self.assertIn(list_response.status_code, (405, 200))
+            detail_response = self.client.post(detail_url, {"title": "mutation-attempt"})
+            self.assertIn(detail_response.status_code, (405, 200))
+
+            episode.refresh_from_db()
+            self.assertEqual(episode.title, "Untouched")
+            self.assertEqual(WorkflowEpisode.objects.count(), before_count)

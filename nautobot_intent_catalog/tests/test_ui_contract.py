@@ -45,6 +45,8 @@ RETAINED_UI_ROUTE_NAMES = [
     "desirediprange",
     "desiredworkspace_list",
     "desiredworkspace",
+    "workflowepisode_list",
+    "workflowepisode",
 ]
 
 REMOVED_UI_ROUTE_NAMES = [
@@ -100,14 +102,15 @@ MODEL_URL_PREFIXES = {
     "braindumpdocument_list": ("braindumps", True),
     "desirediprange_list": ("ip-ranges", True),
     "desiredworkspace_list": ("workspaces", False),
+    "workflowepisode_list": ("workflow-episodes", False),
 }
 
 
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_22(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 22)
+    def test_retained_routes_count_is_24(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 24)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -211,7 +214,7 @@ class UIContractManifestTests(unittest.TestCase):
         self.assertFalse(hasattr(tables_module, "_render_reconciliation_status"))
         self.assertNotIn("dashboard_url", IntentCatalogConfig.default_settings)
 
-    def test_navigation_only_links_the_eleven_retained_lists(self):
+    def test_navigation_only_links_the_twelve_retained_lists(self):
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
         linked = {
