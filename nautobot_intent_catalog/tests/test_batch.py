@@ -45,6 +45,28 @@ class BatchDecodeTests(unittest.TestCase):
                      "values": {"name": "example-service", "slug": "example-service"}},
                 ]})
 
+    def test_identity_key_order_is_insignificant(self):
+        for key in (
+            {"desired_node": "agdnsmasq", "name": "primary", "endpoint_type": "primary"},
+            {"desired_node": "agdnsmasq", "endpoint_type": "primary", "name": "primary"},
+            {"endpoint_type": "primary", "name": "primary", "desired_node": "agdnsmasq"},
+        ):
+            with self.subTest(order=tuple(key)):
+                _, operations = decode_batch({"dry_run": True, "operations": [
+                    {"op": "upsert", "kind": "desired_endpoint", "key": key,
+                     "values": {"gateway_address": "192.168.50.1"}},
+                ]})
+                self.assertEqual(set(operations[0].key), {"desired_node", "name", "endpoint_type"})
+
+    def test_identity_error_names_the_expected_keys(self):
+        with self.assertRaises(BatchValidationError) as ctx:
+            decode_batch({"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_endpoint",
+                 "key": {"desired_node": "agdnsmasq", "name": "primary"},
+                 "values": {"gateway_address": "192.168.50.1"}},
+            ]})
+        self.assertIn("expected non-empty keys (desired_node, name, endpoint_type)", str(ctx.exception))
+
     def test_desired_service_binding_envelope_accepts_dict_identity_and_rejects_unknown_fields(self):
         dry_run, operations = decode_batch({"dry_run": True, "operations": [
             {"op": "upsert", "kind": "desired_service_binding",

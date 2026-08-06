@@ -97,8 +97,11 @@ def decode_batch(document: dict[str, Any]) -> tuple[bool, list[Operation]]:
         op, kind, key, values = raw["op"], raw["kind"], raw["key"], raw["values"]
         if op not in {"upsert", "delete"} or kind not in _KEYS or not isinstance(key, dict) or not isinstance(values, dict):
             raise BatchValidationError(f"operations[{index}] has invalid op, kind, key, or values")
-        if tuple(key) != _KEYS[kind] or any(not value for value in key.values()):
-            raise BatchValidationError(f"operations[{index}].key is not the identity for {kind}")
+        if set(key) != set(_KEYS[kind]) or any(not value for value in key.values()):
+            raise BatchValidationError(
+                f"operations[{index}].key is not the identity for {kind}; "
+                f"expected non-empty keys ({', '.join(_KEYS[kind])})"
+            )
         if op == "delete" and values:
             raise BatchValidationError(f"operations[{index}].values must be empty for delete")
         unknown = set(values) - _FIELDS[kind]
