@@ -61,7 +61,7 @@ _FIELDS = {
     "desired_compute_platform": {"name", "slug", "lifecycle", "control_node", "config", "realized_cluster"},
     "desired_compute_instance": {"desired_node", "platform", "instance_kind", "desired_power_state", "desired_presence", "vcpus", "memory_mb", "root_disk_gb", "config", "realized_vm"},
     "desired_service": {"name", "slug", "lifecycle"},
-    "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "config_schema_version", "config"},
+    "desired_service_placement": {"desired_service", "desired_node", "desired_endpoint", "instance_name", "desired_state", "deployment_profile", "management_mode", "config_schema_version", "config"},
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
     "desired_workspace": {"name", "slug", "lifecycle", "source_remote_url", "desired_node", "expected_path", "desired_presence"},

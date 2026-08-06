@@ -671,6 +671,13 @@ else:
             (STATE_DISABLED, "Disabled"),
         )
 
+        MANAGEMENT_NCTL_MANAGED = "nctl_managed"
+        MANAGEMENT_MANUAL = "manual"
+        MANAGEMENT_MODE_CHOICES = (
+            (MANAGEMENT_NCTL_MANAGED, "nctl managed"),
+            (MANAGEMENT_MANUAL, "Manual"),
+        )
+
         desired_service = models.ForeignKey(
             DesiredService,
             on_delete=models.PROTECT,
@@ -695,6 +702,14 @@ else:
             default=STATE_ACTIVE,
         )
         deployment_profile = models.SlugField(max_length=255)
+        # manual_service: a `manual` placement is converged on presence alone.
+        # nctl skips run-state/reachability gaps and plans no actions for it;
+        # only its disappearance from the node remains drift.
+        management_mode = models.CharField(
+            max_length=32,
+            choices=MANAGEMENT_MODE_CHOICES,
+            default=MANAGEMENT_NCTL_MANAGED,
+        )
         config_schema_version = models.CharField(
             max_length=64,
             default="1",

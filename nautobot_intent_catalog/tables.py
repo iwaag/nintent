@@ -178,6 +178,7 @@ else:
                 "desired_endpoint",
                 "desired_state",
                 "deployment_profile",
+                "management_mode",
                 "config_schema_version",
             )
             default_columns = fields
