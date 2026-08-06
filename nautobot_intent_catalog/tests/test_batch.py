@@ -67,6 +67,25 @@ class BatchDecodeTests(unittest.TestCase):
             ]})
         self.assertIn("expected non-empty keys (desired_node, name, endpoint_type)", str(ctx.exception))
 
+    def test_values_may_repeat_identity_fields_with_equal_values(self):
+        # `nctl desired export` emits every writable field, so identity fields
+        # legally appear in both key and values with identical values.
+        _, operations = decode_batch({"dry_run": True, "operations": [
+            {"op": "upsert", "kind": "desired_endpoint",
+             "key": {"desired_node": "agstudio", "name": "primary", "endpoint_type": "primary"},
+             "values": {"desired_node": "agstudio", "name": "primary", "endpoint_type": "primary",
+                        "ip_policy": "external"}},
+        ]})
+        self.assertEqual(operations[0].values["desired_node"], "agstudio")
+
+    def test_rejects_identity_field_repeated_with_a_different_value(self):
+        with self.assertRaises(BatchValidationError) as ctx:
+            decode_batch({"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_node", "key": {"slug": "node-a"},
+                 "values": {"slug": "node-b", "name": "node-b"}},
+            ]})
+        self.assertIn("identity field", str(ctx.exception))
+
     def test_desired_service_binding_envelope_accepts_dict_identity_and_rejects_unknown_fields(self):
         dry_run, operations = decode_batch({"dry_run": True, "operations": [
             {"op": "upsert", "kind": "desired_service_binding",
@@ -216,6 +235,24 @@ else:
             result = apply_batch({**document, "dry_run": False}).as_dict()
             self.assertTrue(result["transaction"]["committed"])
             self.assertEqual(DesiredService.objects.filter(slug="batch-service").count(), before + 1)
+
+        def test_export_shaped_create_with_identity_fields_repeated_in_values_commits(self):
+            # Regression: the export document repeats identity fields inside values;
+            # the create path used to raise TypeError (duplicate keyword argument),
+            # rolling back the whole batch with HTTP 409.
+            document = {"dry_run": False, "operations": [
+                {"op": "upsert", "kind": "desired_node", "key": {"slug": "export-node"},
+                 "values": {"name": "export-node", "slug": "export-node",
+                            "node_type": "device", "lifecycle": "planned"}},
+                {"op": "upsert", "kind": "desired_endpoint",
+                 "key": {"desired_node": "export-node", "name": "primary", "endpoint_type": "primary"},
+                 "values": {"desired_node": "export-node", "name": "primary", "endpoint_type": "primary",
+                            "ip_policy": "external"}},
+            ]}
+            result = apply_batch(document).as_dict()
+            self.assertEqual(result["transaction"]["status"], "committed")
+            node = DesiredNode.objects.get(slug="export-node")
+            self.assertTrue(DesiredEndpoint.objects.filter(desired_node=node, name="primary").exists())
 
         def test_reference_resolves_from_an_earlier_batch_operation(self):
             document = {"dry_run": False, "operations": [

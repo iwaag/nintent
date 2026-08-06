@@ -107,6 +107,12 @@ def decode_batch(document: dict[str, Any]) -> tuple[bool, list[Operation]]:
         unknown = set(values) - _FIELDS[kind]
         if unknown:
             raise BatchValidationError(f"operations[{index}].values has unknown fields: {', '.join(sorted(unknown))}")
+        mismatched = sorted(name for name in _KEYS[kind] if name in values and values[name] != key[name])
+        if mismatched:
+            raise BatchValidationError(
+                f"operations[{index}].values repeats identity field(s) with a different value "
+                f"than key: {', '.join(mismatched)}"
+            )
         duplicate_key = (kind, tuple(sorted((name, repr(value)) for name, value in key.items())))
         if duplicate_key in seen:
             raise BatchValidationError(f"operations[{index}] duplicates an earlier {kind} identity")
@@ -184,7 +190,9 @@ def apply_batch(document: dict[str, Any]) -> BatchResult:
                 elif item["action"] in {"create", "update"}:
                     values = _orm_values(operation.kind, operation.values, models)
                     if row is None:
-                        row = model(**_orm_values(operation.kind, operation.key, models), **values)
+                        # decode_batch guarantees identity fields repeated in values equal the key,
+                        # so merging (rather than double-splatting) is safe for exported documents.
+                        row = model(**{**_orm_values(operation.kind, operation.key, models), **values})
                     else:
                         for name, value in values.items():
                             setattr(row, name, value)
