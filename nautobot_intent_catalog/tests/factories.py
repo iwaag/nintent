@@ -35,6 +35,18 @@ except ImportError:  # pragma: no cover - Nautobot/Django are unavailable in loc
 else:
     _counter = itertools.count(1)
 
+    # Test-local binding declaration (the same shape nctl's tests/conftest.py installs).
+    # Production declares no profile bindings since the `node_agent` profile was retired
+    # (pyagag-agcode p1); the declaration/refusal machinery is exercised with this neutral
+    # entry instead, installed for every test process that imports these factories.
+    from nautobot_intent_catalog import models as _models
+
+    TEST_BINDING_PROFILE = "llm_consumer"
+    TEST_BINDING_NAME = "llm_provider"
+    TEST_REFUSED_CONFIG_KEY = "llm_provider_service"
+    _models.PROFILE_BINDING_NAMES[TEST_BINDING_PROFILE] = (TEST_BINDING_NAME,)
+    _models.REFUSED_PROFILE_CONFIG_KEYS[TEST_BINDING_PROFILE] = (TEST_REFUSED_CONFIG_KEY,)
+
     def _next(prefix: str) -> str:
         return f"{prefix}-{next(_counter)}"
 
@@ -130,8 +142,8 @@ else:
     def make_desired_service_binding(**overrides) -> DesiredServiceBinding:
         defaults = {
             "consumer_placement": overrides.pop("consumer_placement", None)
-            or make_desired_service_placement(deployment_profile="node_agent"),
-            "binding_name": "llm_provider",
+            or make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE),
+            "binding_name": TEST_BINDING_NAME,
             "provider_service": overrides.pop("provider_service", None) or make_desired_service(),
         }
         defaults.update(overrides)

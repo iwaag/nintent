@@ -645,19 +645,18 @@ else:
 
 
     # Closed profile -> declared binding-name map, per idea-A section 4.7. nintent has no
-    # repo-sibling access to `ansible_agdev/vars/deployment_profiles.yml` at runtime, so this is
-    # duplicated here deliberately (see p1/plan.md "Binding-name declaration"); Phase 3 will need
-    # the same declaration for the observation slot and can revisit ownership then.
-    PROFILE_BINDING_NAMES = {
-        "node_agent": ("llm_provider",),
-    }
+    # repo-sibling access to `ansible_agdev/vars/deployment_profiles.yml` at runtime, so a
+    # profile that consumes a binding must be declared here deliberately (see p1/plan.md
+    # "Binding-name declaration"). Empty since the `node_agent` profile was retired with the
+    # opencode harness (pyagag-agcode p1): no current profile consumes a binding, and an
+    # undeclared binding_name is rejected, so an empty map refuses all bindings. The test
+    # suite installs its own neutral entry (tests/factories.py) to keep the machinery covered.
+    PROFILE_BINDING_NAMES = {}
 
-    # Config keys refused once their profile's equivalent binding is the source of truth. Only
-    # `node_agent`/`llm_provider_service` exists today; the old-key refusal is coordinated with
-    # the same key's removal from `ansible_agdev/vars/deployment_profiles.yml`.
-    REFUSED_PROFILE_CONFIG_KEYS = {
-        "node_agent": ("llm_provider_service",),
-    }
+    # Config keys refused once their profile's equivalent binding is the source of truth.
+    # Empty for the same reason as PROFILE_BINDING_NAMES above; the retired entry was
+    # `node_agent`/`llm_provider_service`.
+    REFUSED_PROFILE_CONFIG_KEYS = {}
 
 
     @extras_features("graphql")

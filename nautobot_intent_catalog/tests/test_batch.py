@@ -89,7 +89,7 @@ class BatchDecodeTests(unittest.TestCase):
     def test_desired_service_binding_envelope_accepts_dict_identity_and_rejects_unknown_fields(self):
         dry_run, operations = decode_batch({"dry_run": True, "operations": [
             {"op": "upsert", "kind": "desired_service_binding",
-             "key": {"consumer_placement": {"desired_service": "node-agent", "instance_name": "aghub"},
+             "key": {"consumer_placement": {"desired_service": "llm-consumer", "instance_name": "aghub"},
                       "binding_name": "llm_provider"},
              "values": {"provider_service": "ollama"}},
         ]})
@@ -99,7 +99,7 @@ class BatchDecodeTests(unittest.TestCase):
         with self.assertRaises(BatchValidationError):
             decode_batch({"dry_run": True, "operations": [
                 {"op": "upsert", "kind": "desired_service_binding",
-                 "key": {"consumer_placement": {"desired_service": "node-agent", "instance_name": "aghub"},
+                 "key": {"consumer_placement": {"desired_service": "llm-consumer", "instance_name": "aghub"},
                           "binding_name": "llm_provider"},
                  "values": {"resolution_status": "resolved"}},
             ]})
@@ -152,6 +152,7 @@ try:
     from django.core.exceptions import ValidationError
     from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement, DesiredWorkspace
     from nautobot_intent_catalog.tests.factories import (
+        TEST_BINDING_PROFILE,
         make_desired_compute_instance,
         make_desired_compute_platform,
         make_desired_endpoint,
@@ -448,12 +449,12 @@ else:
     class ServiceBindingPerRowValidationTests(TestCase):
         """Step 2 per-row checks: idea-A section 4.7 binding-name declaration, old-key refusal."""
 
-        def test_declared_binding_name_on_node_agent_profile_saves(self):
+        def test_declared_binding_name_on_a_declared_profile_saves(self):
             binding = make_desired_service_binding()
             self.assertEqual(binding.binding_name, "llm_provider")
 
         def test_undeclared_binding_name_is_rejected(self):
-            placement = make_desired_service_placement(deployment_profile="node_agent")
+            placement = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             binding = DesiredServiceBinding(
                 consumer_placement=placement, binding_name="not-declared", provider_service=make_desired_service()
             )
@@ -461,7 +462,7 @@ else:
                 binding.full_clean()
             self.assertIn("binding_name", ctx.exception.message_dict)
 
-        def test_binding_name_declared_for_node_agent_is_rejected_on_a_profile_without_it(self):
+        def test_binding_name_declared_elsewhere_is_rejected_on_a_profile_without_it(self):
             placement = make_desired_service_placement(deployment_profile="default")
             binding = DesiredServiceBinding(
                 consumer_placement=placement, binding_name="llm_provider", provider_service=make_desired_service()
@@ -470,12 +471,12 @@ else:
                 binding.full_clean()
             self.assertIn("binding_name", ctx.exception.message_dict)
 
-        def test_node_agent_placement_config_refuses_the_old_key(self):
+        def test_declared_profile_placement_config_refuses_the_old_key(self):
             placement = DesiredServicePlacement(
                 desired_service=make_desired_service(),
-                desired_node=make_desired_service_placement(deployment_profile="node_agent").desired_node,
+                desired_node=make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE).desired_node,
                 instance_name="second-instance",
-                deployment_profile="node_agent",
+                deployment_profile=TEST_BINDING_PROFILE,
                 config_schema_version="1",
                 config={"llm_provider_service": "ollama"},
             )
@@ -484,12 +485,12 @@ else:
             self.assertIn("config", ctx.exception.message_dict)
             self.assertIn("llm_provider_service", ctx.exception.message_dict["config"][0])
 
-        def test_node_agent_placement_config_without_the_old_key_saves(self):
-            placement = make_desired_service_placement(deployment_profile="node_agent", config={"other_key": "value"})
+        def test_declared_profile_placement_config_without_the_old_key_saves(self):
+            placement = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE, config={"other_key": "value"})
             self.assertEqual(placement.config, {"other_key": "value"})
 
         def test_apply_batch_creates_a_binding_via_the_batch_endpoint(self):
-            placement = make_desired_service_placement(deployment_profile="node_agent")
+            placement = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             service, _provider_placement = _make_resolvable_provider()
             document = {
                 "dry_run": False,
@@ -514,7 +515,7 @@ else:
             self.assertEqual(binding.provider_service_id, service.pk)
 
         def test_apply_batch_rejects_reintroducing_the_old_config_key(self):
-            placement = make_desired_service_placement(deployment_profile="node_agent")
+            placement = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             document = {
                 "dry_run": False,
                 "operations": [
@@ -547,7 +548,7 @@ else:
 
         def test_fully_resolvable_binding_commits(self):
             service, _placement = _make_resolvable_provider()
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             make_desired_service_binding(consumer_placement=consumer, provider_service=service)
 
             result = self._trigger_validation(service)
@@ -559,7 +560,7 @@ else:
             placement_b.desired_service = service
             placement_b.full_clean()
             placement_b.save()
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             make_desired_service_binding(consumer_placement=consumer, provider_service=service)
 
             result = self._trigger_validation(service)
@@ -571,7 +572,7 @@ else:
         def test_unusable_endpoint_is_rejected(self):
             service = make_desired_service()
             placement = make_desired_service_placement(desired_service=service)  # no desired_endpoint
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             make_desired_service_binding(consumer_placement=consumer, provider_service=service)
 
             result = self._trigger_validation(service)
@@ -581,7 +582,7 @@ else:
 
         def test_self_reference_is_rejected(self):
             service, placement = _make_resolvable_provider()
-            placement.deployment_profile = "node_agent"
+            placement.deployment_profile = TEST_BINDING_PROFILE
             placement.full_clean()
             placement.save()
             make_desired_service_binding(consumer_placement=placement, provider_service=service)
@@ -593,10 +594,10 @@ else:
         def test_cycle_is_rejected(self):
             service_1, placement_1 = _make_resolvable_provider()
             service_2, placement_2 = _make_resolvable_provider()
-            placement_1.deployment_profile = "node_agent"
+            placement_1.deployment_profile = TEST_BINDING_PROFILE
             placement_1.full_clean()
             placement_1.save()
-            placement_2.deployment_profile = "node_agent"
+            placement_2.deployment_profile = TEST_BINDING_PROFILE
             placement_2.full_clean()
             placement_2.save()
             make_desired_service_binding(consumer_placement=placement_1, provider_service=service_2)
@@ -608,7 +609,7 @@ else:
 
         def test_retiring_a_provider_with_an_inbound_binding_is_rejected_with_the_inbound_set(self):
             service, placement = _make_resolvable_provider()
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             make_desired_service_binding(consumer_placement=consumer, provider_service=service)
             committed = self._trigger_validation(service)
             self.assertEqual(committed["transaction"]["status"], "committed")
@@ -633,7 +634,7 @@ else:
 
         def test_deactivating_the_sole_active_provider_placement_is_rejected(self):
             service, placement = _make_resolvable_provider()
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             make_desired_service_binding(consumer_placement=consumer, provider_service=service)
             committed = self._trigger_validation(service)
             self.assertEqual(committed["transaction"]["status"], "committed")
@@ -654,7 +655,7 @@ else:
 
         def test_deleting_a_provider_service_with_an_inbound_binding_is_blocked_in_the_plan(self):
             service, _placement = _make_resolvable_provider()
-            consumer = make_desired_service_placement(deployment_profile="node_agent")
+            consumer = make_desired_service_placement(deployment_profile=TEST_BINDING_PROFILE)
             binding = make_desired_service_binding(consumer_placement=consumer, provider_service=service)
 
             document = {
