@@ -121,6 +121,25 @@ class BatchDecodeTests(unittest.TestCase):
                  "values": {"desired_branch": "main"}},
             ]})
 
+    def test_desired_agent_envelope_accepts_known_fields_and_rejects_unknown_ones(self):
+        dry_run, operations = decode_batch({"dry_run": True, "operations": [
+            {"op": "upsert", "kind": "desired_agent", "key": {"slug": "agforge"},
+             "values": {"name": "agforge", "lifecycle": "active",
+                        "desired_workspace": "pj-agdev",
+                        "desired_service_placement": {"desired_service": "agforge",
+                                                      "instance_name": "agforge"},
+                        "zulip_user_id": 13, "plane_user_id": "plane-uuid-13",
+                        "desired_zulip_channels": ["FreeForge"]}},
+        ]})
+        self.assertTrue(dry_run)
+        self.assertEqual(operations[0].kind, "desired_agent")
+
+        with self.assertRaises(BatchValidationError):
+            decode_batch({"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_agent", "key": {"slug": "agforge"},
+                 "values": {"zulip_email": "agforge@example.invalid"}},
+            ]})
+
     def test_actual_link_references_resolve_reject_unknown_and_allow_null(self):
         class Query:
             def __init__(self, value):
@@ -150,7 +169,7 @@ class BatchDecodeTests(unittest.TestCase):
 try:
     from django.test import TestCase
     from django.core.exceptions import ValidationError
-    from nautobot_intent_catalog.models import DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement, DesiredWorkspace
+    from nautobot_intent_catalog.models import DesiredAgent, DesiredComputeInstance, DesiredEndpoint, DesiredNode, DesiredServiceBinding, DesiredServicePlacement, DesiredWorkspace
     from nautobot_intent_catalog.tests.factories import (
         TEST_BINDING_PROFILE,
         make_desired_compute_instance,
@@ -160,6 +179,7 @@ try:
         make_desired_service,
         make_desired_service_binding,
         make_desired_service_placement,
+        make_desired_workspace,
     )
 except ImportError:
     pass
@@ -445,6 +465,53 @@ else:
             with self.assertRaises(ValidationError) as ctx:
                 node.full_clean()
             self.assertIn("lifecycle", ctx.exception.message_dict)
+
+    class DesiredAgentBatchTests(TestCase):
+        """agent_intent p1 Step 1: the thin agent identity round-trips through the writer."""
+
+        def test_batch_apply_creates_an_agent_bound_to_its_workspace(self):
+            workspace = make_desired_workspace()
+            document = {"dry_run": False, "operations": [
+                {"op": "upsert", "kind": "desired_agent", "key": {"slug": "agforge"},
+                 "values": {"name": "agforge", "lifecycle": "active",
+                            "desired_workspace": workspace.slug,
+                            "zulip_user_id": 13,
+                            "desired_zulip_channels": ["FreeForge"]}},
+            ]}
+            result = apply_batch(document).as_dict()
+            self.assertTrue(result["transaction"]["committed"])
+            agent = DesiredAgent.objects.get(slug="agforge")
+            self.assertEqual(agent.desired_workspace_id, workspace.pk)
+            self.assertEqual(agent.zulip_user_id, 13)
+            self.assertEqual(agent.desired_zulip_channels, ["FreeForge"])
+            self.assertEqual(agent.plane_user_id, "")
+
+        def test_unresolved_workspace_reference_is_one_conflict(self):
+            document = {"dry_run": True, "operations": [
+                {"op": "upsert", "kind": "desired_agent", "key": {"slug": "agforge"},
+                 "values": {"name": "agforge", "desired_workspace": "no-such-workspace"}},
+            ]}
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["operations"][0]["action"], "conflict")
+            self.assertIn("desired_workspace", result["operations"][0]["reason"])
+
+        def test_deleting_a_workspace_with_an_agent_is_blocked_in_the_plan(self):
+            workspace = make_desired_workspace()
+            agent = DesiredAgent.objects.create(name="agforge", slug="agforge", desired_workspace=workspace)
+            document = {"dry_run": True, "operations": [
+                {"op": "delete", "kind": "desired_workspace", "key": {"slug": workspace.slug}, "values": {}},
+            ]}
+            result = plan_batch(document).as_dict()
+            self.assertEqual(result["operations"][0]["action"], "conflict")
+            self.assertIn(f"desired_agent:{agent.pk}", result["operations"][0]["reason"])
+
+        def test_channel_list_must_be_a_list_of_non_empty_unique_strings(self):
+            for channels in ("FreeForge", ["", "x"], ["dup", "dup"], [1]):
+                with self.subTest(channels=channels):
+                    agent = DesiredAgent(name="a", slug="a", desired_zulip_channels=channels)
+                    with self.assertRaises(ValidationError) as ctx:
+                        agent.full_clean()
+                    self.assertIn("desired_zulip_channels", ctx.exception.message_dict)
 
     class ServiceBindingPerRowValidationTests(TestCase):
         """Step 2 per-row checks: idea-A section 4.7 binding-name declaration, old-key refusal."""

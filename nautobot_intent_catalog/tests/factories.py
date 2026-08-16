@@ -19,6 +19,7 @@ try:
     from nautobot_intent_catalog.models import (
         AlignmentReview,
         BrainDumpDocument,
+        DesiredAgent,
         DesiredComputeInstance,
         DesiredComputePlatform,
         DesiredEndpoint,
@@ -195,6 +196,23 @@ else:
         workspace.full_clean()
         workspace.save()
         return workspace
+
+    def make_desired_agent(**overrides) -> DesiredAgent:
+        slug = _next("agent")
+        defaults = {
+            "name": slug,
+            "slug": slug,
+            "lifecycle": DesiredAgent.LIFECYCLE_ACTIVE,
+            "desired_workspace": overrides.pop("desired_workspace", None) or make_desired_workspace(),
+            "zulip_user_id": 100 + next(_counter),
+            "plane_user_id": "",
+            "desired_zulip_channels": ["FreeForge"],
+        }
+        defaults.update(overrides)
+        agent = DesiredAgent(**defaults)
+        agent.full_clean()
+        agent.save()
+        return agent
 
     def make_braindump(**overrides) -> BrainDumpDocument:
         defaults = {

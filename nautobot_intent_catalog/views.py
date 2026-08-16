@@ -5,6 +5,7 @@ try:
 
     from .filters import (
         BrainDumpDocumentFilterSet,
+        DesiredAgentFilterSet,
         DesiredComputeInstanceFilterSet,
         DesiredComputePlatformFilterSet,
         DesiredEndpointFilterSet,
@@ -19,6 +20,7 @@ try:
     )
     from .models import (
         BrainDumpDocument,
+        DesiredAgent,
         DesiredComputeInstance,
         DesiredComputePlatform,
         DesiredEndpoint,
@@ -33,6 +35,7 @@ try:
     )
     from .tables import (
         BrainDumpDocumentTable,
+        DesiredAgentTable,
         DesiredComputeInstanceTable,
         DesiredComputePlatformTable,
         DesiredEndpointTable,
@@ -247,6 +250,24 @@ else:
         """Show one desired workspace record."""
 
         queryset = DesiredWorkspace.objects.select_related("desired_node")
+
+
+    class DesiredAgentListView(ObjectListView):
+        """List desired agent records."""
+
+        queryset = DesiredAgent.objects.select_related(
+            "desired_workspace", "desired_service_placement"
+        )
+        filterset = DesiredAgentFilterSet
+        table = DesiredAgentTable
+
+
+    class DesiredAgentView(ObjectView):
+        """Show one desired agent record."""
+
+        queryset = DesiredAgent.objects.select_related(
+            "desired_workspace", "desired_service_placement"
+        )
 
 
     class WorkflowEpisodeListView(ObjectListView):

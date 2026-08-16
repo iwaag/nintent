@@ -22,6 +22,9 @@ class ObjectViewTemplateTests(unittest.TestCase):
             "desiredservice.html",
             "desiredservicebinding.html",
             "desiredserviceplacement.html",
+            "desiredworkspace.html",
+            "desiredagent.html",
+            "workflowepisode.html",
         }
 
         missing_templates = sorted(

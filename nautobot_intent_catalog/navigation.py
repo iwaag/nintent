@@ -1,6 +1,6 @@
 """Navigation items for the Nautobot Intent Catalog App.
 
-Only contains links to the eleven retained read-only list pages.
+Only contains links to the thirteen retained read-only list pages.
 """
 
 try:
@@ -75,6 +75,10 @@ else:
                         NavMenuItem(
                             link="plugins:nautobot_intent_catalog:desiredworkspace_list",
                             name="Desired Workspaces",
+                        ),
+                        NavMenuItem(
+                            link="plugins:nautobot_intent_catalog:desiredagent_list",
+                            name="Desired Agents",
                         ),
                     ),
                 ),

@@ -70,6 +70,7 @@ _BATCH_MODELS = {
     "desired_service_binding": models.DesiredServiceBinding,
     "desired_node_operational_override": models.DesiredNodeOperationalOverride,
     "desired_workspace": models.DesiredWorkspace,
+    "desired_agent": models.DesiredAgent,
 }
 
 

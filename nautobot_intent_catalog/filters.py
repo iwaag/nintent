@@ -9,6 +9,7 @@ try:
     from .models import (
         AlignmentReview,
         BrainDumpDocument,
+        DesiredAgent,
         DesiredComputeInstance,
         DesiredComputePlatform,
         DesiredEndpoint,
@@ -298,6 +299,34 @@ else:
                 queryset.filter(name__icontains=value)
                 | queryset.filter(slug__icontains=value)
                 | queryset.filter(source_remote_url__icontains=value)
+            )
+
+
+    class DesiredAgentFilterSet(NautobotFilterSet):
+        """Filters for desired agents."""
+
+        q = django_filters.CharFilter(method="search", label="Search")
+
+        class Meta:
+            model = DesiredAgent
+            fields = (
+                "id",
+                "name",
+                "slug",
+                "lifecycle",
+                "desired_workspace",
+                "desired_service_placement",
+                "zulip_user_id",
+                "plane_user_id",
+            )
+
+        def search(self, queryset, name, value):
+            if not value.strip():
+                return queryset
+            return (
+                queryset.filter(name__icontains=value)
+                | queryset.filter(slug__icontains=value)
+                | queryset.filter(plane_user_id__icontains=value)
             )
 
 

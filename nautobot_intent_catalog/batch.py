@@ -11,7 +11,7 @@ KIND_ORDER = (
     "desired_node", "desired_ip_range", "desired_endpoint",
     "desired_compute_platform", "desired_compute_instance", "desired_service",
     "desired_service_placement", "desired_service_binding", "desired_node_operational_override",
-    "desired_workspace",
+    "desired_workspace", "desired_agent",
 )
 
 
@@ -52,6 +52,7 @@ _KEYS = {
     "desired_service_binding": ("consumer_placement", "binding_name"),
     "desired_node_operational_override": ("desired_node",),
     "desired_workspace": ("slug",),
+    "desired_agent": ("slug",),
 }
 
 _FIELDS = {
@@ -65,6 +66,7 @@ _FIELDS = {
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
     "desired_workspace": {"name", "slug", "lifecycle", "source_remote_url", "desired_node", "expected_path", "desired_presence"},
+    "desired_agent": {"name", "slug", "lifecycle", "desired_workspace", "desired_service_placement", "zulip_user_id", "plane_user_id", "desired_zulip_channels"},
 }
 
 _CREATE_REQUIRED = {
@@ -78,6 +80,7 @@ _CREATE_REQUIRED = {
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node"},
     "desired_workspace": {"name", "slug", "source_remote_url", "desired_node", "expected_path"},
+    "desired_agent": {"name", "slug"},
 }
 
 
@@ -221,7 +224,8 @@ def _models() -> dict[str, Any]:
             "desired_service_placement": models.DesiredServicePlacement,
             "desired_service_binding": models.DesiredServiceBinding,
             "desired_node_operational_override": models.DesiredNodeOperationalOverride,
-            "desired_workspace": models.DesiredWorkspace}
+            "desired_workspace": models.DesiredWorkspace,
+            "desired_agent": models.DesiredAgent}
 
 
 _ACTUAL_REFERENCE_MODELS = {
@@ -235,7 +239,8 @@ _ACTUAL_REFERENCE_MODELS = {
 _REFERENCE_KIND = {"desired_node": "desired_node", "control_node": "desired_node", "platform": "desired_compute_platform",
                    "desired_service": "desired_service", "desired_endpoint": "desired_endpoint",
                    "local_endpoint": "desired_endpoint", "tailscale_endpoint": "desired_endpoint",
-                   "consumer_placement": "desired_service_placement", "provider_service": "desired_service"}
+                   "consumer_placement": "desired_service_placement", "provider_service": "desired_service",
+                   "desired_workspace": "desired_workspace", "desired_service_placement": "desired_service_placement"}
 
 
 def _find(model: Any, kind: str, key: dict[str, Any]) -> Any | None:
@@ -291,7 +296,8 @@ _DELETE_BLOCKERS = {
                          ("tailscale_operational_overrides", "desired_node_operational_override")),
     "desired_compute_platform": (("desired_compute_instances", "desired_compute_instance"),),
     "desired_service": (("placements", "desired_service_placement"), ("inbound_bindings", "desired_service_binding")),
-    "desired_service_placement": (("service_bindings", "desired_service_binding"),),
+    "desired_service_placement": (("service_bindings", "desired_service_binding"), ("desired_agents", "desired_agent")),
+    "desired_workspace": (("desired_agents", "desired_agent"),),
 }
 
 

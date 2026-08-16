@@ -45,6 +45,8 @@ RETAINED_UI_ROUTE_NAMES = [
     "desirediprange",
     "desiredworkspace_list",
     "desiredworkspace",
+    "desiredagent_list",
+    "desiredagent",
     "workflowepisode_list",
     "workflowepisode",
 ]
@@ -102,6 +104,7 @@ MODEL_URL_PREFIXES = {
     "braindumpdocument_list": ("braindumps", True),
     "desirediprange_list": ("ip-ranges", True),
     "desiredworkspace_list": ("workspaces", False),
+    "desiredagent_list": ("agents", False),
     "workflowepisode_list": ("workflow-episodes", False),
 }
 
@@ -109,8 +112,8 @@ MODEL_URL_PREFIXES = {
 class UIContractManifestTests(unittest.TestCase):
     """Manifest checks for retained read-only routes and deleted mutation routes."""
 
-    def test_retained_routes_count_is_24(self):
-        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 24)
+    def test_retained_routes_count_is_26(self):
+        self.assertEqual(len(RETAINED_UI_ROUTE_NAMES), 26)
 
     def test_retained_routes_can_be_reversed(self):
         if not HAS_DJANGO:
@@ -214,7 +217,7 @@ class UIContractManifestTests(unittest.TestCase):
         self.assertFalse(hasattr(tables_module, "_render_reconciliation_status"))
         self.assertNotIn("dashboard_url", IntentCatalogConfig.default_settings)
 
-    def test_navigation_only_links_the_twelve_retained_lists(self):
+    def test_navigation_only_links_the_thirteen_retained_lists(self):
         if not HAS_DJANGO:
             self.skipTest("Requires django/nautobot")
         linked = {
@@ -235,6 +238,7 @@ if HAS_DJANGO:
     from nautobot_intent_catalog import models as _models
     from nautobot_intent_catalog.tests.factories import (
         make_braindump,
+        make_desired_agent,
         make_desired_compute_instance,
         make_desired_compute_platform,
         make_desired_endpoint,
@@ -327,6 +331,13 @@ if HAS_DJANGO:
             "detail": "desiredworkspace",
             "model": _models.DesiredWorkspace,
             "factory": make_desired_workspace,
+            "label_field": "name",
+        },
+        {
+            "list": "desiredagent_list",
+            "detail": "desiredagent",
+            "model": _models.DesiredAgent,
+            "factory": make_desired_agent,
             "label_field": "name",
         },
     ]

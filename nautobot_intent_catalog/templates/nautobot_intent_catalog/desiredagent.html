@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>{{ object.name }}</h1>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <strong>Desired Agent</strong>
+                </div>
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">Name</th>
+                        <td>{{ object.name }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Slug</th>
+                        <td><code>{{ object.slug }}</code></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Lifecycle</th>
+                        <td>{{ object.get_lifecycle_display|default:object.lifecycle }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Workspace</th>
+                        <td>{{ object.desired_workspace|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Service Placement</th>
+                        <td>{{ object.desired_service_placement|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Zulip User ID</th>
+                        <td>{{ object.zulip_user_id|default_if_none:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Plane User ID</th>
+                        <td>{{ object.plane_user_id|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Desired Zulip Channels</th>
+                        <td>
+                            {% for channel in object.desired_zulip_channels %}
+                            <code>{{ channel }}</code>{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                            -
+                            {% endfor %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

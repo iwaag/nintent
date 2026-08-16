@@ -9,6 +9,7 @@ try:
     from .compute_contract import effective_lifecycle
     from .models import (
         BrainDumpDocument,
+        DesiredAgent,
         DesiredComputeInstance,
         DesiredComputePlatform,
         DesiredEndpoint,
@@ -297,6 +298,33 @@ else:
                 "source_remote_url",
                 "lifecycle",
                 "desired_presence",
+            )
+
+
+    class DesiredAgentTable(BaseTable):
+        """Desired agent list table."""
+
+        name = tables.LinkColumn()
+        desired_workspace = tables.LinkColumn()
+
+        class Meta(BaseTable.Meta):
+            model = DesiredAgent
+            fields = (
+                "name",
+                "slug",
+                "lifecycle",
+                "desired_workspace",
+                "desired_service_placement",
+                "zulip_user_id",
+                "plane_user_id",
+                "desired_zulip_channels",
+            )
+            default_columns = (
+                "name",
+                "lifecycle",
+                "desired_workspace",
+                "zulip_user_id",
+                "plane_user_id",
             )
 
 

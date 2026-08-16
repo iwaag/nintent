@@ -1130,6 +1130,100 @@ else:
 
 
     @extras_features("graphql")
+    class DesiredAgent(PrimaryModel):
+        """An agag agent as desired identity: where it lives and who it is in Zulip and Plane.
+
+        Deliberately thin (agent_intent p1 step 1). An agent's *registration* is the
+        deterministic part of its desired state — a Zulip account subscribed to the
+        channels it must hear, a Plane member account it acts as, and the workspace its
+        listener runs from. Liveness is deliberately not modeled here: it is observed,
+        informational, and never a desired value.
+
+        Identity keys are numeric/opaque ids, never emails: the Zulip realm hides real
+        email addresses from events, so everything downstream keys on `zulip_user_id`.
+        """
+
+        LIFECYCLE_PROPOSED = "proposed"
+        LIFECYCLE_PLANNED = "planned"
+        LIFECYCLE_APPROVED = "approved"
+        LIFECYCLE_ACTIVE = "active"
+        LIFECYCLE_DEPRECATED = "deprecated"
+        LIFECYCLE_RETIRED = "retired"
+        LIFECYCLE_CHOICES = (
+            (LIFECYCLE_PROPOSED, "Proposed"),
+            (LIFECYCLE_PLANNED, "Planned"),
+            (LIFECYCLE_APPROVED, "Approved"),
+            (LIFECYCLE_ACTIVE, "Active"),
+            (LIFECYCLE_DEPRECATED, "Deprecated"),
+            (LIFECYCLE_RETIRED, "Retired"),
+        )
+
+        name = models.CharField(max_length=255)
+        slug = models.SlugField(max_length=255, unique=True)
+        lifecycle = models.CharField(
+            max_length=64,
+            choices=LIFECYCLE_CHOICES,
+            default=LIFECYCLE_PROPOSED,
+        )
+        desired_workspace = models.ForeignKey(
+            DesiredWorkspace,
+            on_delete=models.PROTECT,
+            blank=True,
+            null=True,
+            related_name="desired_agents",
+        )
+        desired_service_placement = models.ForeignKey(
+            DesiredServicePlacement,
+            on_delete=models.PROTECT,
+            blank=True,
+            null=True,
+            related_name="desired_agents",
+        )
+        # Blank until the account exists: a DesiredAgent may be declared before its
+        # Zulip/Plane accounts are created, and the absence is exactly the drift gap
+        # the registration evaluation reports.
+        zulip_user_id = models.PositiveIntegerField(blank=True, null=True)
+        plane_user_id = models.CharField(max_length=255, blank=True, default="")
+        desired_zulip_channels = models.JSONField(default=list, blank=True)
+
+        class Meta:
+            ordering = ("name",)
+            verbose_name = "desired agent"
+            verbose_name_plural = "desired agents"
+            constraints = (
+                models.CheckConstraint(
+                    check=models.expressions.RawSQL(
+                        "jsonb_typeof(desired_zulip_channels) = 'array'",
+                        (),
+                        output_field=models.BooleanField(),
+                    ),
+                    name="nic_agent_channels_array",
+                ),
+            )
+
+        def __str__(self) -> str:
+            return self.name
+
+        def get_absolute_url(self) -> str:
+            return reverse("plugins:nautobot_intent_catalog:desiredagent", args=[self.pk])
+
+        def clean(self):
+            super().clean()
+            errors = {}
+            if not str(self.name or "").strip():
+                errors["name"] = "Name must not be empty or whitespace-only."
+            channels = self.desired_zulip_channels
+            if not isinstance(channels, list):
+                errors["desired_zulip_channels"] = "Desired Zulip channels must be a list of channel names."
+            elif any(not isinstance(item, str) or not item.strip() for item in channels):
+                errors["desired_zulip_channels"] = "Every desired Zulip channel must be a non-empty string."
+            elif len(set(channels)) != len(channels):
+                errors["desired_zulip_channels"] = "Desired Zulip channels must not repeat a channel name."
+            if errors:
+                raise ValidationError(errors)
+
+
+    @extras_features("graphql")
     class WorkflowEpisode(PrimaryModel):
         """A workflow-improvement candidate: self-report, assessment, references, and resolution in one record."""
 
