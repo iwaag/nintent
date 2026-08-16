@@ -1224,6 +1224,55 @@ else:
 
 
     @extras_features("graphql")
+    class ObservedAgentRegistration(PrimaryModel):
+        """What the Zulip and Plane realms actually say about one agent (agent_intent p1 step 3).
+
+        Actual state, not desired: one row per `DesiredAgent`, replaced on every
+        collection round. Deliberately minimal — enough to answer "is this agent
+        registered where its desired state says it should be", and nothing about
+        whether it is currently alive, which is a separate freshness signal.
+
+        `observed_at` is the collector's timestamp for the round, so staleness is
+        measured against a single clock rather than against per-realm claims.
+        """
+
+        desired_agent = models.OneToOneField(
+            DesiredAgent,
+            on_delete=models.CASCADE,
+            related_name="observed_registration",
+        )
+        observed_at = models.DateTimeField()
+        collector = models.CharField(max_length=255, blank=True, default="")
+
+        zulip_present = models.BooleanField(default=False)
+        zulip_user_id = models.PositiveIntegerField(blank=True, null=True)
+        zulip_is_active = models.BooleanField(default=False)
+        zulip_channels = models.JSONField(default=list, blank=True)
+
+        plane_present = models.BooleanField(default=False)
+        plane_user_id = models.CharField(max_length=255, blank=True, default="")
+        # Plane's workspace role integer (20 admin / 15 member / 5 guest), null when
+        # the account is not a member at all.
+        plane_role = models.PositiveSmallIntegerField(blank=True, null=True)
+
+        class Meta:
+            ordering = ("desired_agent__name",)
+            verbose_name = "observed agent registration"
+            verbose_name_plural = "observed agent registrations"
+
+        def __str__(self) -> str:
+            return f"{self.desired_agent} registration"
+
+        def clean(self):
+            super().clean()
+            channels = self.zulip_channels
+            if not isinstance(channels, list) or any(not isinstance(item, str) for item in channels):
+                raise ValidationError(
+                    {"zulip_channels": "Observed Zulip channels must be a list of channel names."}
+                )
+
+
+    @extras_features("graphql")
     class WorkflowEpisode(PrimaryModel):
         """A workflow-improvement candidate: self-report, assessment, references, and resolution in one record."""
 
