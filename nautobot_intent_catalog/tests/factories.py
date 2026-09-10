@@ -205,7 +205,6 @@ else:
             "lifecycle": DesiredAgent.LIFECYCLE_ACTIVE,
             "desired_workspace": overrides.pop("desired_workspace", None) or make_desired_workspace(),
             "zulip_user_id": 100 + next(_counter),
-            "plane_user_id": "",
             "desired_zulip_channels": ["FreeForge"],
         }
         defaults.update(overrides)

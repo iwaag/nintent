@@ -128,7 +128,7 @@ class BatchDecodeTests(unittest.TestCase):
                         "desired_workspace": "pj-agdev",
                         "desired_service_placement": {"desired_service": "agforge",
                                                       "instance_name": "agforge"},
-                        "zulip_user_id": 13, "plane_user_id": "plane-uuid-13",
+                        "zulip_user_id": 13,
                         "desired_zulip_channels": ["FreeForge"]}},
         ]})
         self.assertTrue(dry_run)
@@ -484,7 +484,6 @@ else:
             self.assertEqual(agent.desired_workspace_id, workspace.pk)
             self.assertEqual(agent.zulip_user_id, 13)
             self.assertEqual(agent.desired_zulip_channels, ["FreeForge"])
-            self.assertEqual(agent.plane_user_id, "")
 
         def test_unresolved_workspace_reference_is_one_conflict(self):
             document = {"dry_run": True, "operations": [

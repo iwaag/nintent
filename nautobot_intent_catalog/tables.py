@@ -316,7 +316,6 @@ else:
                 "desired_workspace",
                 "desired_service_placement",
                 "zulip_user_id",
-                "plane_user_id",
                 "desired_zulip_channels",
             )
             default_columns = (
@@ -324,7 +323,6 @@ else:
                 "lifecycle",
                 "desired_workspace",
                 "zulip_user_id",
-                "plane_user_id",
             )
 
 

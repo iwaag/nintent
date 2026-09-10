@@ -36,10 +36,6 @@
                         <td>{{ object.zulip_user_id|default_if_none:"-" }}</td>
                     </tr>
                     <tr>
-                        <th scope="row">Plane User ID</th>
-                        <td>{{ object.plane_user_id|default:"-" }}</td>
-                    </tr>
-                    <tr>
                         <th scope="row">Desired Zulip Channels</th>
                         <td>
                             {% for channel in object.desired_zulip_channels %}

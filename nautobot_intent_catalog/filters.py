@@ -317,7 +317,6 @@ else:
                 "desired_workspace",
                 "desired_service_placement",
                 "zulip_user_id",
-                "plane_user_id",
             )
 
         def search(self, queryset, name, value):
@@ -326,7 +325,6 @@ else:
             return (
                 queryset.filter(name__icontains=value)
                 | queryset.filter(slug__icontains=value)
-                | queryset.filter(plane_user_id__icontains=value)
             )
 
 

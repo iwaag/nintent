@@ -66,7 +66,7 @@ _FIELDS = {
     "desired_service_binding": {"consumer_placement", "binding_name", "provider_service"},
     "desired_node_operational_override": {"desired_node", "connection_path", "local_endpoint", "tailscale_endpoint", "ansible_port", "power_control", "is_laptop"},
     "desired_workspace": {"name", "slug", "lifecycle", "source_remote_url", "desired_node", "expected_path", "desired_presence"},
-    "desired_agent": {"name", "slug", "lifecycle", "desired_workspace", "desired_service_placement", "zulip_user_id", "plane_user_id", "desired_zulip_channels"},
+    "desired_agent": {"name", "slug", "lifecycle", "desired_workspace", "desired_service_placement", "zulip_user_id", "desired_zulip_channels"},
 }
 
 _CREATE_REQUIRED = {

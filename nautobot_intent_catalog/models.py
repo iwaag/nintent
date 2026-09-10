@@ -1131,13 +1131,16 @@ else:
 
     @extras_features("graphql")
     class DesiredAgent(PrimaryModel):
-        """An agag agent as desired identity: where it lives and who it is in Zulip and Plane.
+        """An agag agent as desired identity: where it lives and who it is in Zulip.
 
         Deliberately thin (agent_intent p1 step 1). An agent's *registration* is the
         deterministic part of its desired state — a Zulip account subscribed to the
-        channels it must hear, a Plane member account it acts as, and the workspace its
-        listener runs from. Liveness is deliberately not modeled here: it is observed,
-        informational, and never a desired value.
+        channels it must hear, and the workspace its listener runs from. Liveness is
+        deliberately not modeled here: it is observed, informational, and never a
+        desired value.
+
+        `refactor` p3 removed `plane_user_id`: an agent's messaging identity is the
+        Zulip bot user id, and there is no second account to declare.
 
         Identity keys are numeric/opaque ids, never emails: the Zulip realm hides real
         email addresses from events, so everything downstream keys on `zulip_user_id`.
@@ -1180,10 +1183,9 @@ else:
             related_name="desired_agents",
         )
         # Blank until the account exists: a DesiredAgent may be declared before its
-        # Zulip/Plane accounts are created, and the absence is exactly the drift gap
-        # the registration evaluation reports.
+        # Zulip account is created, and the absence is exactly the drift gap the
+        # registration evaluation reports.
         zulip_user_id = models.PositiveIntegerField(blank=True, null=True)
-        plane_user_id = models.CharField(max_length=255, blank=True, default="")
         desired_zulip_channels = models.JSONField(default=list, blank=True)
 
         class Meta:
@@ -1225,7 +1227,7 @@ else:
 
     @extras_features("graphql")
     class ObservedAgentRegistration(PrimaryModel):
-        """What the Zulip and Plane realms actually say about one agent (agent_intent p1 step 3).
+        """What the Zulip realm actually says about one agent (agent_intent p1 step 3).
 
         Actual state, not desired: one row per `DesiredAgent`, replaced on every
         collection round. Deliberately minimal — enough to answer "is this agent
@@ -1248,12 +1250,6 @@ else:
         zulip_user_id = models.PositiveIntegerField(blank=True, null=True)
         zulip_is_active = models.BooleanField(default=False)
         zulip_channels = models.JSONField(default=list, blank=True)
-
-        plane_present = models.BooleanField(default=False)
-        plane_user_id = models.CharField(max_length=255, blank=True, default="")
-        # Plane's workspace role integer (20 admin / 15 member / 5 guest), null when
-        # the account is not a member at all.
-        plane_role = models.PositiveSmallIntegerField(blank=True, null=True)
 
         class Meta:
             ordering = ("desired_agent__name",)
